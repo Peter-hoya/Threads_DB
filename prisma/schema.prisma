@@ -1,0 +1,86 @@
+// Threads & X 자동발행 시스템 스키마
+// 모든 시간은 UTC로 저장, 조회 시 KST(+9) 변환
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("NETLIFY_DATABASE_URL")
+}
+
+// ============================================================
+// 계정 테이블 - 럭키걸, 럭키맨 등 브랜드/페르소나 계정 관리
+// ============================================================
+model Account {
+  id          Int      @id @default(autoincrement())
+  accountName String   @unique @map("account_name") // 계정 이름 (럭키걸, 럭키맨 등)
+  description String?  // 계정 설명
+  threadsUserId      String? @map("threads_user_id")      // Threads API 사용자 ID
+  threadsAccessToken  String? @map("threads_access_token") // Threads API 액세스 토큰
+  isActive    Boolean  @default(true) @map("is_active") // 활성 상태
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  templates Template[]
+  posts     Post[]
+
+  @@map("accounts")
+}
+
+// ============================================================
+// 템플릿 테이블 - 계정별 프롬프트 템플릿 (A, B, C, D 등)
+// ============================================================
+model Template {
+  id           Int      @id @default(autoincrement())
+  accountId    Int      @map("account_id")
+  templateCode String   @map("template_code") // A, B, C, D 등 알파벳 코드
+  templateName String?  @map("template_name") // 템플릿 이름 (선택)
+  promptText   String   @map("prompt_text")   // 실제 프롬프트 내용
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  posts   Post[]
+
+  // 하나의 계정에 동일한 템플릿 코드는 하나만 존재
+  @@unique([accountId, templateCode])
+  @@map("templates")
+}
+
+// ============================================================
+// 게시물 테이블 - 스레드/X 발행 콘텐츠
+// ============================================================
+model Post {
+  id          Int      @id @default(autoincrement())
+  accountId   Int      @map("account_id")     // 어떤 계정인지
+  platform    String   @map("platform")       // 'threads' 또는 'x' (정확한 텍스트)
+  content     String   @map("content")        // 발행할 텍스트 (줄바꿈 포함)
+  templateId  Int?     @map("template_id")    // 사용된 템플릿 (선택)
+
+  // 발행 관련
+  status      String   @default("pending") @map("status") // pending, scheduled, published, failed
+  scheduledAt DateTime? @map("scheduled_at")  // 발행 예정 시간
+  publishedAt DateTime? @map("published_at")  // 실제 발행 시간
+
+  // 발행 결과
+  postIdExternal String? @map("post_id_external") // 외부 플랫폼 게시물 ID (threads/x에서 반환)
+  errorMessage   String? @map("error_message")     // 실패 시 에러 메시지
+
+  // 적재 시간 (DB에 저장된 시간)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  account  Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  template Template? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  // 인덱스: 발행 대기 중인 게시물 빠르게 조회
+  @@index([status, scheduledAt])
+  @@index([accountId, platform])
+  @@map("posts")
+}
