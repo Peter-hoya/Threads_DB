@@ -12,12 +12,13 @@ export default function TemplatesPage() {
   const [form, setForm] = useState({ accountId: '', templateCode: '', templateName: '', promptText: '' });
 
   // 콘텐츠 생성 관련 state
-  const [genTemplate, setGenTemplate] = useState(null); // 현재 "생성" 모드인 템플릿
-  const [genDraft, setGenDraft] = useState('');          // 작성 중인 콘텐츠
-  const [genResults, setGenResults] = useState([]);      // 생성된 콘텐츠 결과 목록
+  const [activeTemplateId, setActiveTemplateId] = useState(null); // 현재 생성 활성화된 템플릿 ID
+  const [generating, setGenerating] = useState(false);
+  const [genResults, setGenResults] = useState([]);
   const [selectedResults, setSelectedResults] = useState(new Set());
   const [sending, setSending] = useState(false);
   const [genPlatform, setGenPlatform] = useState('threads');
+  const [genAccountId, setGenAccountId] = useState('');
 
   const fetchData = async () => {
     const [tRes, aRes] = await Promise.all([
@@ -52,26 +53,47 @@ export default function TemplatesPage() {
     fetchData();
   };
 
-  // === 콘텐츠 생성 ===
-  const openGenerator = (t) => {
-    setGenTemplate(t);
-    setGenDraft('');
+  // === AI 콘텐츠 생성 ===
+  const handleGenerate = async (t) => {
+    setActiveTemplateId(t.id);
     setGenResults([]);
     setSelectedResults(new Set());
     setGenPlatform('threads');
+    setGenAccountId(String(t.accountId));
+    setGenerating(true);
+
+    try {
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          promptText: t.promptText,
+          templateCode: t.templateCode,
+          accountName: t.account?.accountName || 'Unknown',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '생성 실패');
+
+      const newResults = data.posts.map((content, idx) => ({
+        id: Date.now() + idx,
+        content,
+      }));
+      setGenResults(newResults);
+      setSelectedResults(new Set(newResults.map((r) => r.id)));
+    } catch (e) {
+      alert(`❌ AI 생성 오류: ${e.message}`);
+      setActiveTemplateId(null);
+    } finally {
+      setGenerating(false);
+    }
   };
 
   const closeGenerator = () => {
-    setGenTemplate(null);
-    setGenDraft('');
+    setActiveTemplateId(null);
     setGenResults([]);
     setSelectedResults(new Set());
-  };
-
-  const addToResults = () => {
-    if (!genDraft.trim()) return;
-    setGenResults((prev) => [...prev, { id: Date.now(), content: genDraft.trim() }]);
-    setGenDraft('');
+    setGenAccountId('');
   };
 
   const removeResult = (id) => {
@@ -99,6 +121,7 @@ export default function TemplatesPage() {
   const sendToPosts = async () => {
     if (selectedResults.size === 0) return;
     setSending(true);
+    const activeTemplate = templates.find((t) => t.id === activeTemplateId);
     const selected = genResults.filter((r) => selectedResults.has(r.id));
     try {
       for (const item of selected) {
@@ -106,18 +129,18 @@ export default function TemplatesPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            accountId: genTemplate.accountId,
+            accountId: parseInt(genAccountId),
             platform: genPlatform,
             content: item.content,
-            templateId: genTemplate.id,
+            templateId: activeTemplate?.id || null,
             status: 'pending',
           }),
         });
       }
       alert(`✅ ${selected.length}개 게시물이 대기열에 추가되었습니다.\n게시물 관리 탭에서 확인하세요.`);
-      // 보내진 결과 제거
       setGenResults((prev) => prev.filter((r) => !selectedResults.has(r.id)));
       setSelectedResults(new Set());
+      if (selected.length === genResults.length) closeGenerator();
     } catch (e) {
       alert(`❌ 전송 실패: ${e.message}`);
     }
@@ -144,173 +167,144 @@ export default function TemplatesPage() {
         </select>
       </div>
 
-      <div className="card-grid">
+      {/* 템플릿 목록 */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
         {templates.map((t) => (
-          <div className="card" key={t.id}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-              <div>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <span style={{ background: 'var(--accent)', color: '#fff', width: '28px', height: '28px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 700 }}>
-                    {t.templateCode}
-                  </span>
-                  <span style={{ fontWeight: 700, fontSize: '15px' }}>{t.templateName || `템플릿 ${t.templateCode}`}</span>
+          <div key={t.id}>
+            {/* 템플릿 카드 */}
+            <div className="card" style={{ marginBottom: activeTemplateId === t.id ? '0' : undefined, borderRadius: activeTemplateId === t.id ? 'var(--radius-lg) var(--radius-lg) 0 0' : undefined }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                <div>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <span style={{ background: 'var(--accent)', color: '#fff', width: '28px', height: '28px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 700 }}>
+                      {t.templateCode}
+                    </span>
+                    <span style={{ fontWeight: 700, fontSize: '15px' }}>{t.templateName || `템플릿 ${t.templateCode}`}</span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    {t.account?.accountName}
+                  </div>
                 </div>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  {t.account?.accountName}
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <button
+                    className="btn btn--success btn--sm"
+                    onClick={() => activeTemplateId === t.id ? closeGenerator() : handleGenerate(t)}
+                    disabled={generating && activeTemplateId === t.id}
+                  >
+                    {generating && activeTemplateId === t.id ? '⏳ 생성중...' : activeTemplateId === t.id ? '✕ 닫기' : '📝 생성'}
+                  </button>
+                  <button className="btn btn--secondary btn--sm" onClick={() => handleEdit(t)}>수정</button>
+                  <button className="btn btn--danger btn--sm" onClick={() => handleDelete(t.id)}>삭제</button>
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: '4px' }}>
-                <button className="btn btn--success btn--sm" onClick={() => openGenerator(t)}>📝 생성</button>
-                <button className="btn btn--secondary btn--sm" onClick={() => handleEdit(t)}>수정</button>
-                <button className="btn btn--danger btn--sm" onClick={() => handleDelete(t.id)}>삭제</button>
+              <div style={{ fontSize: '13px', lineHeight: '1.7', whiteSpace: 'pre-wrap', background: 'var(--bg-input)', padding: '12px', borderRadius: 'var(--radius-md)', maxHeight: '180px', overflowY: 'auto' }}>
+                {t.promptText}
               </div>
             </div>
-            <div style={{ fontSize: '13px', lineHeight: '1.7', whiteSpace: 'pre-wrap', background: 'var(--bg-input)', padding: '12px', borderRadius: 'var(--radius-md)', maxHeight: '180px', overflowY: 'auto' }}>
-              {t.promptText}
-            </div>
+
+            {/* 생성 결과 패널 (해당 템플릿 바로 아래 인라인) */}
+            {activeTemplateId === t.id && (
+              <div style={{
+                background: 'var(--bg-card)', border: '1px solid var(--border)', borderTop: 'none',
+                borderRadius: '0 0 var(--radius-lg) var(--radius-lg)', padding: '20px',
+              }}>
+                {/* 로딩 상태 */}
+                {generating ? (
+                  <div style={{ textAlign: 'center', padding: '48px 20px' }}>
+                    <div className="spinner" style={{ margin: '0 auto 16px', borderTopColor: 'var(--accent)' }} />
+                    <p style={{ margin: 0, fontWeight: 600, fontSize: '15px', color: 'var(--text)' }}>AI가 10개의 게시물을 자동 생성 중입니다...</p>
+                    <p style={{ margin: '6px 0 0', fontSize: '13px', color: 'var(--text-muted)' }}>약 10~20초 소요</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* 액션 바 */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <h4 style={{ margin: 0, fontSize: '15px' }}>📦 생성 결과 ({genResults.length}개)</h4>
+                        {genResults.length > 0 && (
+                          <label style={{ fontSize: '13px', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <input type="checkbox" checked={selectedResults.size === genResults.length && genResults.length > 0} onChange={toggleSelectAll} />
+                            전체 선택
+                          </label>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <select className="form-select" value={genAccountId} onChange={(e) => setGenAccountId(e.target.value)}
+                          style={{ width: 'auto', minWidth: '130px', fontSize: '13px', padding: '4px 8px' }}>
+                          {accounts.filter((a) => a.isActive).map((a) => (
+                            <option key={a.id} value={a.id}>{a.accountName}</option>
+                          ))}
+                        </select>
+                        <select className="form-select" value={genPlatform} onChange={(e) => setGenPlatform(e.target.value)}
+                          style={{ width: 'auto', minWidth: '120px', fontSize: '13px', padding: '4px 8px' }}>
+                          <option value="threads">Threads</option>
+                          <option value="x">X (Twitter)</option>
+                        </select>
+                        <button
+                          className="btn btn--primary btn--sm"
+                          onClick={sendToPosts}
+                          disabled={selectedResults.size === 0 || sending || !genAccountId}
+                        >
+                          {sending ? '전송 중...' : `🚀 게시물로 보내기 (${selectedResults.size})`}
+                        </button>
+                        <button className="btn btn--success btn--sm" onClick={() => handleGenerate(t)} disabled={generating}>
+                          🔄 다시 생성
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 카드 그리드 */}
+                    {genResults.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)', background: 'var(--bg-input)', borderRadius: 'var(--radius-md)', border: '2px dashed var(--border)' }}>
+                        <p style={{ margin: 0 }}>생성된 게시물이 없습니다.</p>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
+                        {genResults.map((r, idx) => (
+                          <div
+                            key={r.id}
+                            onClick={() => toggleSelect(r.id)}
+                            style={{
+                              padding: '14px', borderRadius: 'var(--radius-md)', cursor: 'pointer',
+                              border: `2px solid ${selectedResults.has(r.id) ? 'var(--accent)' : 'var(--border)'}`,
+                              background: selectedResults.has(r.id) ? 'var(--accent-light)' : 'var(--bg-card)',
+                              transition: 'all 0.15s ease', position: 'relative',
+                            }}
+                          >
+                            {/* 헤더: 번호 + 체크 + 삭제 */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedResults.has(r.id)}
+                                  onChange={(e) => { e.stopPropagation(); toggleSelect(r.id); }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: 'var(--accent)' }}
+                                />
+                                <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)' }}>#{idx + 1}</span>
+                              </div>
+                              <button
+                                className="btn btn--danger btn--sm"
+                                style={{ padding: '2px 8px', fontSize: '11px' }}
+                                onClick={(e) => { e.stopPropagation(); removeResult(r.id); }}
+                              >삭제</button>
+                            </div>
+                            {/* 콘텐츠 */}
+                            <div style={{ fontSize: '13px', lineHeight: '1.7', whiteSpace: 'pre-wrap', maxHeight: '160px', overflowY: 'auto' }}>
+                              {r.content}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
           </div>
         ))}
         {templates.length === 0 && <div className="empty-state"><div className="icon">📝</div><p>등록된 템플릿이 없습니다.</p></div>}
       </div>
-
-      {/* ============ 콘텐츠 생성 패널 ============ */}
-      {genTemplate && (
-        <div style={{
-          position: 'fixed', inset: 0, zIndex: 1000,
-          background: 'rgba(0,0,0,0.35)', display: 'flex', justifyContent: 'center', alignItems: 'flex-start',
-          paddingTop: '40px', overflowY: 'auto',
-        }} onClick={(e) => { if (e.target === e.currentTarget) closeGenerator(); }}>
-          <div style={{
-            background: 'var(--bg-card)', borderRadius: 'var(--radius-lg)',
-            width: '100%', maxWidth: '860px', padding: '28px',
-            boxShadow: 'var(--shadow-lg)', maxHeight: 'calc(100vh - 80px)', overflowY: 'auto',
-          }}>
-            {/* 헤더 */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '18px' }}>
-                  📝 콘텐츠 생성
-                  <span style={{ marginLeft: '10px', background: 'var(--accent)', color: '#fff', padding: '2px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 600 }}>
-                    {genTemplate.account?.accountName} · {genTemplate.templateCode}
-                  </span>
-                </h3>
-              </div>
-              <button className="btn btn--secondary btn--sm" onClick={closeGenerator}>✕ 닫기</button>
-            </div>
-
-            {/* 2컬럼: 프롬프트 참고 + 작성 영역 */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
-              {/* 왼쪽: 프롬프트 참고 */}
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
-                  📋 프롬프트 (참고용)
-                </label>
-                <div style={{
-                  fontSize: '13px', lineHeight: '1.7', whiteSpace: 'pre-wrap',
-                  background: 'var(--bg-input)', padding: '14px', borderRadius: 'var(--radius-md)',
-                  maxHeight: '240px', overflowY: 'auto', border: '1px solid var(--border)',
-                }}>
-                  {genTemplate.promptText}
-                </div>
-              </div>
-
-              {/* 오른쪽: 콘텐츠 작성 */}
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
-                  ✏️ 콘텐츠 작성
-                </label>
-                <textarea
-                  className="form-textarea"
-                  placeholder={'프롬프트를 참고하여 게시물 콘텐츠를 작성하세요.\n작성 후 "추가" 버튼을 눌러 아래 결과 목록에 넣으세요.\n여러 개를 작성할 수 있습니다.'}
-                  value={genDraft}
-                  onChange={(e) => setGenDraft(e.target.value)}
-                  rows={8}
-                  style={{ resize: 'vertical' }}
-                />
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
-                  <button className="btn btn--primary btn--sm" onClick={addToResults} disabled={!genDraft.trim()}>
-                    + 결과에 추가
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* 구분선 */}
-            <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '8px 0 20px' }} />
-
-            {/* 결과 목록 헤더 */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <h4 style={{ margin: 0, fontSize: '15px' }}>📦 생성된 콘텐츠 ({genResults.length}개)</h4>
-                {genResults.length > 0 && (
-                  <label style={{ fontSize: '13px', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <input type="checkbox" checked={selectedResults.size === genResults.length && genResults.length > 0} onChange={toggleSelectAll} />
-                    전체 선택
-                  </label>
-                )}
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <select className="form-select" value={genPlatform} onChange={(e) => setGenPlatform(e.target.value)}
-                  style={{ width: 'auto', minWidth: '120px', fontSize: '13px', padding: '4px 8px' }}>
-                  <option value="threads">Threads</option>
-                  <option value="x">X (Twitter)</option>
-                </select>
-                <button
-                  className="btn btn--primary btn--sm"
-                  onClick={sendToPosts}
-                  disabled={selectedResults.size === 0 || sending}
-                >
-                  {sending ? '전송 중...' : `🚀 선택 항목 게시물로 보내기 (${selectedResults.size})`}
-                </button>
-              </div>
-            </div>
-
-            {/* 결과 리스트 */}
-            {genResults.length === 0 ? (
-              <div style={{
-                textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)',
-                background: 'var(--bg-input)', borderRadius: 'var(--radius-md)', border: '2px dashed var(--border)',
-              }}>
-                <div style={{ fontSize: '32px', marginBottom: '8px' }}>📝</div>
-                <p style={{ margin: 0 }}>위에서 콘텐츠를 작성하고 "결과에 추가" 버튼을 눌러주세요.</p>
-                <p style={{ margin: '4px 0 0', fontSize: '12px' }}>추가된 콘텐츠를 체크박스로 선택하여 게시물로 보낼 수 있습니다.</p>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {genResults.map((r, idx) => (
-                  <div key={r.id} style={{
-                    display: 'flex', gap: '12px', alignItems: 'flex-start',
-                    padding: '14px', borderRadius: 'var(--radius-md)',
-                    border: `2px solid ${selectedResults.has(r.id) ? 'var(--accent)' : 'var(--border)'}`,
-                    background: selectedResults.has(r.id) ? 'var(--accent-light)' : 'var(--bg-card)',
-                    transition: 'all 0.15s ease',
-                  }}>
-                    <input
-                      type="checkbox"
-                      checked={selectedResults.has(r.id)}
-                      onChange={() => toggleSelect(r.id)}
-                      style={{ marginTop: '3px', cursor: 'pointer', width: '18px', height: '18px', accentColor: 'var(--accent)' }}
-                    />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                        <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>#{idx + 1}</span>
-                        <button
-                          className="btn btn--danger btn--sm"
-                          style={{ padding: '2px 8px', fontSize: '11px' }}
-                          onClick={() => removeResult(r.id)}
-                        >삭제</button>
-                      </div>
-                      <div style={{ fontSize: '14px', lineHeight: '1.7', whiteSpace: 'pre-wrap' }}>
-                        {r.content}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* 템플릿 추가/수정 모달 */}
       <Modal

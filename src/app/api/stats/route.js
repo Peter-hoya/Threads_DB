@@ -3,12 +3,11 @@ import prisma from '@/lib/db';
 
 export async function GET() {
   try {
-    const [totalPosts, pending, published, failed, scheduled] = await Promise.all([
+    const [totalPosts, pending, published, failed] = await Promise.all([
       prisma.post.count(),
       prisma.post.count({ where: { status: 'pending' } }),
       prisma.post.count({ where: { status: 'published' } }),
       prisma.post.count({ where: { status: 'failed' } }),
-      prisma.post.count({ where: { status: 'scheduled' } }),
     ]);
 
     const accountStats = await prisma.account.findMany({
@@ -32,7 +31,7 @@ export async function GET() {
     });
 
     return NextResponse.json({
-      counts: { total: totalPosts, pending, published, failed, scheduled },
+      counts: { total: totalPosts, pending, published, failed },
       accountStats: accountStats.map((a) => ({
         id: a.id,
         name: a.accountName,

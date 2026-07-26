@@ -16,20 +16,26 @@ export default function PostsPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [publishing, setPublishing] = useState(null);
+
 
   // Filters
   const [statusFilter, setStatusFilter] = useState('');
   const [accountFilter, setAccountFilter] = useState('');
   const [platformFilter, setPlatformFilter] = useState('');
+  const [sortOrder, setSortOrder] = useState('asc'); // asc: 적재순서(큐 순), desc: 최신순
 
   // Modal
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState({ accountId: '', platform: 'threads', content: '', scheduledAt: '' });
+  const [form, setForm] = useState({ accountId: '', platform: 'threads', content: '' });
+
+  // Bulk Modal
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [bulkForm, setBulkForm] = useState({ accountId: '', platform: 'threads', content: '' });
+  const [bulkSending, setBulkSending] = useState(false);
 
   const fetchPosts = useCallback(async () => {
-    const params = new URLSearchParams({ page: String(page), limit: '12' });
+    const params = new URLSearchParams({ page: String(page), limit: '12', sort: sortOrder });
     if (statusFilter) params.set('status', statusFilter);
     if (accountFilter) params.set('accountId', accountFilter);
     if (platformFilter) params.set('platform', platformFilter);
@@ -39,7 +45,7 @@ export default function PostsPage() {
     setTotal(data.total || 0);
     setTotalPages(data.totalPages || 1);
     setLoading(false);
-  }, [page, statusFilter, accountFilter, platformFilter]);
+  }, [page, statusFilter, accountFilter, platformFilter, sortOrder]);
 
   useEffect(() => { fetchPosts(); }, [fetchPosts]);
   useEffect(() => {
@@ -50,7 +56,6 @@ export default function PostsPage() {
     const url = editingId ? `/api/posts/${editingId}` : '/api/posts';
     const method = editingId ? 'PATCH' : 'POST';
     const body = { ...form };
-    if (!body.scheduledAt) delete body.scheduledAt;
     await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     setModalOpen(false);
     setEditingId(null);
@@ -63,23 +68,7 @@ export default function PostsPage() {
     fetchPosts();
   };
 
-  const handlePublish = async (id) => {
-    if (!confirm('이 게시물을 지금 Threads에 발행하시겠습니까?\n(약 30초 소요)')) return;
-    setPublishing(id);
-    try {
-      const res = await fetch(`/api/posts/${id}/publish`, { method: 'POST' });
-      const data = await res.json();
-      if (data.success) {
-        alert('✅ 발행 성공!');
-      } else {
-        alert(`❌ 발행 실패: ${data.error}`);
-      }
-    } catch (e) {
-      alert(`❌ 오류: ${e.message}`);
-    }
-    setPublishing(null);
-    fetchPosts();
-  };
+
 
   const handleEdit = (p) => {
     setEditingId(p.id);
@@ -87,15 +76,48 @@ export default function PostsPage() {
       accountId: String(p.accountId),
       platform: p.platform,
       content: p.content,
-      scheduledAt: p.scheduledAt ? new Date(p.scheduledAt).toISOString().slice(0, 16) : '',
     });
     setModalOpen(true);
   };
 
   const openNewModal = () => {
     setEditingId(null);
-    setForm({ accountId: accounts[0]?.id?.toString() || '', platform: 'threads', content: '', scheduledAt: '' });
+    setForm({ accountId: accounts[0]?.id?.toString() || '', platform: 'threads', content: '' });
     setModalOpen(true);
+  };
+
+  const openBulkModal = () => {
+    setBulkForm({ accountId: accounts[0]?.id?.toString() || '', platform: 'threads', content: '' });
+    setBulkModalOpen(true);
+  };
+
+  const handleBulkSubmit = async () => {
+    const posts = bulkForm.content
+      .split('---')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    if (posts.length === 0) return alert('등록할 게시물이 없습니다.');
+    if (!confirm(`${posts.length}개의 게시물을 등록하시겠습니까?`)) return;
+    setBulkSending(true);
+    try {
+      for (const content of posts) {
+        await fetch('/api/posts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            accountId: bulkForm.accountId,
+            platform: bulkForm.platform,
+            content,
+          }),
+        });
+      }
+      alert(`✅ ${posts.length}개 게시물이 대기열에 등록되었습니다.`);
+      setBulkModalOpen(false);
+      fetchPosts();
+    } catch (e) {
+      alert(`❌ 등록 실패: ${e.message}`);
+    }
+    setBulkSending(false);
   };
 
   if (loading) return <div className="loading-page"><div className="spinner" /></div>;
@@ -104,14 +126,17 @@ export default function PostsPage() {
     <>
       <div className="page-header">
         <div><h2>게시물 관리</h2><p>총 {total}개 게시물</p></div>
-        <button className="btn btn--primary" onClick={openNewModal}>+ 새 게시물</button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button className="btn btn--primary" onClick={openNewModal}>+ 새 게시물</button>
+          <button className="btn btn--secondary" onClick={openBulkModal}>📋 대량 등록</button>
+        </div>
       </div>
 
       {/* Tabs */}
       <div className="tabs">
-        {[{ label: '전체', value: '' }, { label: '⏳ 대기', value: 'pending' }, { label: '📅 예약', value: 'scheduled' }, { label: '✅ 완료', value: 'published' }, { label: '❌ 실패', value: 'failed' }].map((t) => (
+        {[{ label: '전체', value: '' }, { label: '⏳ 대기', value: 'pending' }, { label: '✅ 완료', value: 'published' }, { label: '❌ 실패', value: 'failed' }].map((t) => (
           <button key={t.value} className={`tab${statusFilter === t.value ? ' active' : ''}`}
-            onClick={() => { setStatusFilter(t.value); setPage(1); }}>{t.label}</button>
+            onClick={() => { setStatusFilter(t.value); setPage(1); setSortOrder(t.value === 'pending' ? 'asc' : 'desc'); }}>{t.label}</button>
         ))}
       </div>
 
@@ -126,11 +151,16 @@ export default function PostsPage() {
           <option value="threads">Threads</option>
           <option value="x">X</option>
         </select>
+        <button className={`btn btn--sm ${sortOrder === 'asc' ? 'btn--primary' : 'btn--secondary'}`}
+          onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+          title={sortOrder === 'asc' ? '적재 순서 (큐 순)' : '최신순'}>
+          {sortOrder === 'asc' ? '📦 큐 순서' : '🕒 최신순'}
+        </button>
       </div>
 
       {/* Posts Grid */}
       <div className="card-grid">
-        {posts.map((p) => (
+        {posts.map((p, idx) => (
           <div className="post-card" key={p.id}>
             <div className="post-card__meta">
               <span className={`badge badge--${p.platform === 'threads' ? 'threads' : 'x'}`}>
@@ -142,6 +172,11 @@ export default function PostsPage() {
               <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)' }}>
                 {p.account?.accountName}
               </span>
+              {p.status === 'pending' && sortOrder === 'asc' && (
+                <span style={{ fontSize: '11px', background: 'var(--warning-bg)', color: 'var(--warning)', padding: '2px 8px', borderRadius: '10px', fontWeight: 700 }}>
+                  #{idx + 1 + (page - 1) * 12}
+                </span>
+              )}
               {p.template && (
                 <span style={{ fontSize: '11px', background: 'var(--accent-light)', color: 'var(--accent)', padding: '2px 6px', borderRadius: '4px' }}>
                   {p.template.templateCode}
@@ -151,16 +186,11 @@ export default function PostsPage() {
             <div className="post-card__content">{p.content}</div>
             <div className="post-card__footer">
               <div className="post-card__time">
-                {p.publishedAt ? `발행: ${toKST(p.publishedAt)}` : p.scheduledAt ? `예약: ${toKST(p.scheduledAt)}` : `등록: ${toKST(p.createdAt)}`}
+                {p.publishedAt ? `발행: ${toKST(p.publishedAt)}` : `등록: ${toKST(p.createdAt)}`}
                 {p.errorMessage && <div style={{ color: 'var(--error)', fontSize: '11px', marginTop: '2px' }}>⚠️ {p.errorMessage.substring(0, 60)}</div>}
               </div>
               <div className="post-card__actions">
-                {p.status !== 'published' && p.platform === 'threads' && (
-                  <button className="btn btn--success btn--sm" onClick={() => handlePublish(p.id)}
-                    disabled={publishing === p.id}>
-                    {publishing === p.id ? '발행중...' : '🚀 발행'}
-                  </button>
-                )}
+
                 <button className="btn btn--secondary btn--sm" onClick={() => handleEdit(p)}>수정</button>
                 <button className="btn btn--danger btn--sm" onClick={() => handleDelete(p.id)}>삭제</button>
               </div>
@@ -207,22 +237,56 @@ export default function PostsPage() {
             <option value="x">X (Twitter)</option>
           </select>
         </div>
-        <div className="form-group">
-          <label className="form-label">발행 예약 시간 (선택)</label>
-          <input className="form-input" type="datetime-local" value={form.scheduledAt}
-            onChange={(e) => setForm({ ...form, scheduledAt: e.target.value })} />
-        </div>
+
         <div className="form-group">
           <label className="form-label">게시물 내용 *</label>
           <textarea className="form-textarea" placeholder="게시물 내용을 입력하세요...&#10;줄바꿈도 그대로 반영됩니다." value={form.content}
             onChange={(e) => setForm({ ...form, content: e.target.value })} rows={8} />
         </div>
-        {form.content && (
-          <div className="form-group">
-            <label className="form-label">미리보기</label>
-            <div style={{ fontSize: '14px', lineHeight: '1.7', whiteSpace: 'pre-wrap', background: 'var(--bg-input)', padding: '14px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
-              {form.content}
-            </div>
+
+      </Modal>
+
+      {/* Bulk Modal */}
+      <Modal
+        open={bulkModalOpen}
+        title="대량 게시물 등록"
+        onClose={() => setBulkModalOpen(false)}
+        footer={
+          <>
+            <button className="btn btn--secondary" onClick={() => setBulkModalOpen(false)}>취소</button>
+            <button className="btn btn--primary" onClick={handleBulkSubmit}
+              disabled={!bulkForm.content.trim() || !bulkForm.accountId || bulkSending}>
+              {bulkSending ? '등록 중...' : `등록 (${bulkForm.content.split('---').map((s) => s.trim()).filter((s) => s.length > 0).length}개)`}
+            </button>
+          </>
+        }
+      >
+        <div className="form-group">
+          <label className="form-label">계정 *</label>
+          <select className="form-select" value={bulkForm.accountId} onChange={(e) => setBulkForm({ ...bulkForm, accountId: e.target.value })}>
+            <option value="">선택</option>
+            {accounts.map((a) => <option key={a.id} value={a.id}>{a.accountName}</option>)}
+          </select>
+        </div>
+        <div className="form-group">
+          <label className="form-label">플랫폼 *</label>
+          <select className="form-select" value={bulkForm.platform} onChange={(e) => setBulkForm({ ...bulkForm, platform: e.target.value })}>
+            <option value="threads">Threads</option>
+            <option value="x">X (Twitter)</option>
+          </select>
+        </div>
+        <div className="form-group">
+          <label className="form-label">게시물 내용 (--- 로 구분)</label>
+          <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '0 0 8px' }}>
+            각 게시물을 <code style={{ background: 'var(--bg-input)', padding: '1px 6px', borderRadius: '4px' }}>---</code> 로 구분하여 입력하세요. 줄바꿈은 그대로 반영됩니다.
+          </p>
+          <textarea className="form-textarea" placeholder={`첫 번째 게시물 내용\n줄바꿈도 가능합니다.\n---\n두 번째 게시물 내용\n---\n세 번째 게시물 내용`}
+            value={bulkForm.content}
+            onChange={(e) => setBulkForm({ ...bulkForm, content: e.target.value })} rows={14} />
+        </div>
+        {bulkForm.content.trim() && (
+          <div style={{ fontSize: '13px', color: 'var(--text-secondary)', padding: '10px 14px', background: 'var(--bg-input)', borderRadius: 'var(--radius-md)' }}>
+            📦 감지된 게시물: <strong>{bulkForm.content.split('---').map((s) => s.trim()).filter((s) => s.length > 0).length}개</strong>
           </div>
         )}
       </Modal>

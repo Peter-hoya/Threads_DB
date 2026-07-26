@@ -79,8 +79,9 @@ model Post {
   account  Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   template Template? @relation(fields: [templateId], references: [id], onDelete: SetNull)
 
-  // 인덱스: 발행 대기 중인 게시물 빠르게 조회
-  @@index([status, scheduledAt])
+  // 인덱스: cron 발행 시 pending 게시물을 적재 순서(id)로 빠르게 조회
+  @@index([status, id])
+  @@index([platform, status])
   @@index([accountId, platform])
   @@map("posts")
 }

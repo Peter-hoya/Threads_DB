@@ -42,7 +42,7 @@ export default function HomePage() {
         <div className="stat-card">
           <div className="label">⏳ 대기 중</div>
           <div className="value" style={{ color: 'var(--warning)' }}>{counts.pending}</div>
-          <div className="sub">발행 예정 {counts.scheduled > 0 && `(예약 ${counts.scheduled})`}</div>
+          <div className="sub">발행 예정</div>
         </div>
         <div className="stat-card">
           <div className="label">✅ 발행 완료</div>
@@ -83,6 +83,53 @@ export default function HomePage() {
           )}
         </div>
 
+        {/* 발행 큐 현황 */}
+        <div className="card">
+          <div className="card-header"><h3>📦 발행 큐 현황</h3></div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {/* 플랫폼별 대기 수 */}
+            <div style={{ display: 'flex', gap: '12px' }}>
+              {platformStats.map((p) => {
+                const pendingCount = accountStats.reduce((sum, a) => sum + (a.byPlatform?.[p.platform] || 0), 0);
+                return (
+                  <div key={p.platform} style={{
+                    flex: 1, padding: '14px', background: 'var(--bg-input)', borderRadius: 'var(--radius-md)',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
+                  }}>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                      {p.platform === 'threads' ? 'Threads' : 'X'}
+                    </span>
+                    <span style={{ fontSize: '24px', fontWeight: 800 }}>{p.count}</span>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>전체</span>
+                  </div>
+                );
+              })}
+              {platformStats.length === 0 && (
+                <div style={{ flex: 1, textAlign: 'center', padding: '20px', color: 'var(--text-muted)', fontSize: '13px' }}>
+                  등록된 게시물이 없습니다.
+                </div>
+              )}
+            </div>
+            {/* 대기 중 요약 */}
+            <div style={{
+              padding: '12px 16px', borderRadius: 'var(--radius-md)',
+              background: counts.pending > 0 ? 'var(--warning-bg)' : 'var(--success-bg)',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}>
+              <span style={{ fontSize: '13px', fontWeight: 600, color: counts.pending > 0 ? 'var(--warning)' : 'var(--success)' }}>
+                {counts.pending > 0 ? `⏳ ${counts.pending}건 발행 대기 중` : '✅ 모든 게시물 발행 완료'}
+              </span>
+              {counts.pending > 0 && (
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                  오픈클로 cron으로 자동 발행
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px', marginBottom: '28px' }}>
         {/* 플랫폼별 분포 */}
         <div className="card">
           <div className="card-header"><h3>📱 플랫폼별 분포</h3></div>
