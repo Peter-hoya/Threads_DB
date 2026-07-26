@@ -6,6 +6,41 @@
 const API_BASE = 'https://graph.threads.net/v1.0';
 const PUBLISH_WAIT_MS = 30000; // Meta 권장 대기 시간
 
+async function getMetaError(response, fallback) {
+  const errText = await response.text();
+
+  try {
+    const errJson = JSON.parse(errText);
+    return errJson?.error?.message || errJson?.message || fallback;
+  } catch {
+    return errText || fallback;
+  }
+}
+
+/**
+ * 저장된 User ID를 신뢰하지 않고 액세스 토큰의 실제 Threads 계정 ID를 조회합니다.
+ * OAuth 과정에서 code/app id 등을 User ID로 잘못 저장해도 올바른 계정으로 발행됩니다.
+ */
+async function resolveThreadsUserId(accessToken) {
+  const params = new URLSearchParams({
+    fields: 'id',
+    access_token: accessToken,
+  });
+  const response = await fetch(`${API_BASE}/me?${params.toString()}`);
+
+  if (!response.ok) {
+    const error = await getMetaError(response, 'Threads 계정 정보를 확인할 수 없습니다.');
+    return { success: false, error: `Threads 계정 확인 실패: ${error}` };
+  }
+
+  const profile = await response.json();
+  if (!profile.id) {
+    return { success: false, error: 'Threads 계정 확인 실패: 사용자 ID가 응답에 없습니다.' };
+  }
+
+  return { success: true, userId: String(profile.id) };
+}
+
 /**
  * 단일 게시물을 Threads에 발행하는 헬퍼 함수
  */
@@ -38,10 +73,8 @@ async function publishSinglePost(text, userId, accessToken, mediaUrl = null, med
     });
 
     if (!createRes.ok) {
-      let errText = await createRes.text();
-      let errJson;
-      try { errJson = JSON.parse(errText); } catch(e) { errJson = errText || 'Empty response from Meta API'; }
-      return { success: false, error: `컨테이너 생성 실패: ${typeof errJson === 'object' ? JSON.stringify(errJson) : errJson}` };
+      const error = await getMetaError(createRes, 'Meta API 응답이 비어 있습니다.');
+      return { success: false, error: `컨테이너 생성 실패: ${error}` };
     }
 
     const { id: creationId } = await createRes.json();
@@ -60,10 +93,8 @@ async function publishSinglePost(text, userId, accessToken, mediaUrl = null, med
     });
 
     if (!publishRes.ok) {
-      let errText = await publishRes.text();
-      let errJson;
-      try { errJson = JSON.parse(errText); } catch(e) { errJson = errText || 'Empty response from Meta API'; }
-      return { success: false, error: `발행 실패: ${typeof errJson === 'object' ? JSON.stringify(errJson) : errJson}` };
+      const error = await getMetaError(publishRes, 'Meta API 응답이 비어 있습니다.');
+      return { success: false, error: `발행 실패: ${error}` };
     }
 
     const { id: postId } = await publishRes.json();
@@ -81,6 +112,14 @@ async function publishSinglePost(text, userId, accessToken, mediaUrl = null, med
  * @returns {{ success: boolean, postId?: string, error?: string }}
  */
 export async function publishToThreads(post, userId, accessToken) {
+  const resolvedUser = await resolveThreadsUserId(accessToken);
+  if (!resolvedUser.success) {
+    return resolvedUser;
+  }
+
+  // userId는 기존 호출부 호환을 위해 인자로 유지하되, 실제 발행에는 토큰 소유자의 ID를 사용합니다.
+  userId = resolvedUser.userId;
+
   // 본문 발행
   const mainResult = await publishSinglePost(post.content, userId, accessToken, post.mediaUrl, post.mediaType);
   
@@ -99,4 +138,3 @@ export async function publishToThreads(post, userId, accessToken) {
 
   return { success: true, postId: mainResult.postId };
 }
-

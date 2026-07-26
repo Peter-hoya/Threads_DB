@@ -18,7 +18,11 @@ export default function AccountsPage() {
   const handleSubmit = async () => {
     const url = editingId ? `/api/accounts/${editingId}` : '/api/accounts';
     const method = editingId ? 'PATCH' : 'POST';
-    await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+    const payload = { ...form };
+    if (editingId && !payload.threadsAccessToken) {
+      delete payload.threadsAccessToken;
+    }
+    await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     setModalOpen(false);
     setEditingId(null);
     setForm({ accountName: '', description: '', threadsUserId: '', threadsAccessToken: '' });
@@ -142,8 +146,11 @@ export default function AccountsPage() {
 
         <div className="form-group">
           <label className="form-label">Threads User ID</label>
-          <input className="form-input" placeholder="예: 27383656767897622" value={form.threadsUserId}
+          <input className="form-input" placeholder="선택 입력 (토큰으로 자동 확인)" value={form.threadsUserId}
             onChange={(e) => setForm({ ...form, threadsUserId: e.target.value })} />
+          <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+            실제 발행 계정은 액세스 토큰을 기준으로 자동 확인됩니다.
+          </span>
         </div>
         <div className="form-group">
           <label className="form-label">Threads Access Token</label>

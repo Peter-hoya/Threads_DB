@@ -13,7 +13,7 @@ function sanitizeAccount(account) {
   return {
     ...account,
     threadsAccessToken: maskToken(account.threadsAccessToken),
-    _hasToken: !!account.threadsAccessToken && !!account.threadsUserId,
+    _hasToken: !!account.threadsAccessToken,
   };
 }
 

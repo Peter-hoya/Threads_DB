@@ -87,7 +87,7 @@ export async function POST(request) {
       const accessToken = post.account.threadsAccessToken || process.env.THREADS_ACCESS_TOKEN;
 
       let result;
-      if (!userId || !accessToken) {
+      if (!accessToken) {
         console.log(`[Mock Mode] No token provided for account "${post.account.accountName}". Bypassing Meta API.`);
         result = { success: true, postId: `mock_${Date.now()}` };
       } else {

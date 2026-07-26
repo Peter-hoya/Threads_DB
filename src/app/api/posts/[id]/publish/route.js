@@ -27,7 +27,7 @@ export async function POST(request, { params }) {
     const accessToken = post.account.threadsAccessToken || process.env.THREADS_ACCESS_TOKEN;
 
     let result;
-    if (!userId || !accessToken) {
+    if (!accessToken) {
       // 토큰이 없는 경우 테스트/개발 목적으로 API 호출을 우회(Mock)하고 성공 처리합니다.
       console.log(`[Mock Mode] No token provided for account "${post.account.accountName}". Bypassing Meta API.`);
       result = { success: true, postId: `mock_${Date.now()}` };
