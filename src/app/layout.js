@@ -2,6 +2,7 @@
 import './globals.css';
 import { useState, useEffect, useCallback } from 'react';
 import Sidebar from '@/components/Sidebar';
+import MobileNav from '@/components/MobileNav';
 import Toast from '@/components/Toast';
 
 export default function RootLayout({ children }) {
@@ -45,6 +46,7 @@ export default function RootLayout({ children }) {
             {typeof children === 'function' ? children({ addToast }) : children}
           </main>
         </div>
+        <MobileNav theme={theme} onToggleTheme={toggleTheme} />
         <Toast toasts={toasts} onDismiss={dismissToast} />
       </body>
     </html>
