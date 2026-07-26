@@ -35,6 +35,21 @@ export async function POST(request, { params }) {
     const result = await publishToThreads(post, userId, accessToken);
 
     if (result.success) {
+      // 업로드된 내부 이미지(Netlify Blobs)인 경우 발행 성공 후 삭제하여 서버 용량 확보
+      if (post.mediaUrl && post.mediaUrl.includes('/api/media/')) {
+        try {
+          const { getStore } = await import('@netlify/blobs');
+          const blobKey = post.mediaUrl.split('/api/media/')[1];
+          if (blobKey) {
+            const store = getStore('media-store');
+            await store.delete(blobKey);
+            console.log(`[Storage] Deleted media blob to save space: ${blobKey}`);
+          }
+        } catch (err) {
+          console.error('[Storage] Failed to delete media blob:', err);
+        }
+      }
+
       const updated = await prisma.post.update({
         where: { id: postId },
         data: {
