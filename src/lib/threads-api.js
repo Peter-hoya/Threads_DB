@@ -38,8 +38,10 @@ async function publishSinglePost(text, userId, accessToken, mediaUrl = null, med
     });
 
     if (!createRes.ok) {
-      const err = await createRes.json();
-      return { success: false, error: `컨테이너 생성 실패: ${JSON.stringify(err)}` };
+      let errText = await createRes.text();
+      let errJson;
+      try { errJson = JSON.parse(errText); } catch(e) { errJson = errText || 'Empty response from Meta API'; }
+      return { success: false, error: `컨테이너 생성 실패: ${typeof errJson === 'object' ? JSON.stringify(errJson) : errJson}` };
     }
 
     const { id: creationId } = await createRes.json();
@@ -58,8 +60,10 @@ async function publishSinglePost(text, userId, accessToken, mediaUrl = null, med
     });
 
     if (!publishRes.ok) {
-      const err = await publishRes.json();
-      return { success: false, error: `발행 실패: ${JSON.stringify(err)}` };
+      let errText = await publishRes.text();
+      let errJson;
+      try { errJson = JSON.parse(errText); } catch(e) { errJson = errText || 'Empty response from Meta API'; }
+      return { success: false, error: `발행 실패: ${typeof errJson === 'object' ? JSON.stringify(errJson) : errJson}` };
     }
 
     const { id: postId } = await publishRes.json();
