@@ -28,7 +28,7 @@ export default function PostsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [form, setForm] = useState({ accountId: '', platform: 'threads', content: '', mediaUrl: '', mediaType: 'image', replyContent: '' });
+  const [form, setForm] = useState({ accountId: '', platform: 'threads', content: '', mediaUrl: '', mediaType: 'image', replyContent: '', scheduledAt: '' });
 
   // Bulk Modal
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
@@ -57,10 +57,31 @@ export default function PostsPage() {
     const url = editingId ? `/api/posts/${editingId}` : '/api/posts';
     const method = editingId ? 'PATCH' : 'POST';
     const body = { ...form };
+    // 만약 scheduledAt이 비어있으면 null 처리 (즉시 대기)
+    if (!body.scheduledAt) {
+      body.scheduledAt = null;
+      body.status = 'pending';
+    } else {
+      body.status = 'scheduled';
+    }
+
     await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     setModalOpen(false);
     setEditingId(null);
     fetchPosts();
+  };
+
+  const handlePublishNow = async (id) => {
+    if (!confirm('이 게시물을 즉시 발행하시겠습니까?')) return;
+    try {
+      const res = await fetch(`/api/posts/${id}/publish`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || '발행 실패');
+      alert('✅ 즉시 발행 성공!');
+      fetchPosts();
+    } catch (err) {
+      alert(`❌ 즉시 발행 에러: ${err.message}`);
+    }
   };
 
   const handleDelete = async (id) => {
@@ -103,6 +124,13 @@ export default function PostsPage() {
 
   const handleEdit = (p) => {
     setEditingId(p.id);
+    let schedTime = '';
+    if (p.scheduledAt) {
+      // Convert to local datetime string for input: YYYY-MM-DDTHH:mm
+      const d = new Date(p.scheduledAt);
+      const tzOffset = d.getTimezoneOffset() * 60000;
+      schedTime = (new Date(d - tzOffset)).toISOString().slice(0, 16);
+    }
     setForm({
       accountId: String(p.accountId),
       platform: p.platform,
@@ -110,13 +138,14 @@ export default function PostsPage() {
       mediaUrl: p.mediaUrl || '',
       mediaType: p.mediaType || 'image',
       replyContent: p.replyContent || '',
+      scheduledAt: schedTime,
     });
     setModalOpen(true);
   };
 
   const openNewModal = () => {
     setEditingId(null);
-    setForm({ accountId: accounts[0]?.id?.toString() || '', platform: 'threads', content: '', mediaUrl: '', mediaType: 'image', replyContent: '' });
+    setForm({ accountId: accounts[0]?.id?.toString() || '', platform: 'threads', content: '', mediaUrl: '', mediaType: 'image', replyContent: '', scheduledAt: '' });
     setModalOpen(true);
   };
 
@@ -168,9 +197,9 @@ export default function PostsPage() {
 
       {/* Tabs */}
       <div className="tabs">
-        {[{ label: '전체', value: '' }, { label: '⏳ 대기', value: 'pending' }, { label: '✅ 완료', value: 'published' }, { label: '❌ 실패', value: 'failed' }].map((t) => (
+        {[{ label: '전체', value: '' }, { label: '⏳ 대기', value: 'pending' }, { label: '📅 예약', value: 'scheduled' }, { label: '✅ 완료', value: 'published' }, { label: '❌ 실패', value: 'failed' }].map((t) => (
           <button key={t.value} className={`tab${statusFilter === t.value ? ' active' : ''}`}
-            onClick={() => { setStatusFilter(t.value); setPage(1); setSortOrder(t.value === 'pending' ? 'asc' : 'desc'); }}>{t.label}</button>
+            onClick={() => { setStatusFilter(t.value); setPage(1); setSortOrder(t.value === 'pending' || t.value === 'scheduled' ? 'asc' : 'desc'); }}>{t.label}</button>
         ))}
       </div>
 
@@ -230,11 +259,13 @@ export default function PostsPage() {
             <div className="post-card__content">{p.content}</div>
             <div className="post-card__footer">
               <div className="post-card__time">
-                {p.publishedAt ? `발행: ${toKST(p.publishedAt)}` : `등록: ${toKST(p.createdAt)}`}
+                {p.status === 'scheduled' && p.scheduledAt ? `예약: ${toKST(p.scheduledAt)}` : p.publishedAt ? `발행: ${toKST(p.publishedAt)}` : `등록: ${toKST(p.createdAt)}`}
                 {p.errorMessage && <div style={{ color: 'var(--error)', fontSize: '11px', marginTop: '2px' }}>⚠️ {p.errorMessage.substring(0, 60)}</div>}
               </div>
               <div className="post-card__actions">
-
+                {(p.status === 'pending' || p.status === 'scheduled' || p.status === 'failed') && (
+                  <button className="btn btn--primary btn--sm" onClick={() => handlePublishNow(p.id)}>🚀 즉시 발행</button>
+                )}
                 <button className="btn btn--secondary btn--sm" onClick={() => handleEdit(p)}>수정</button>
                 <button className="btn btn--danger btn--sm" onClick={() => handleDelete(p.id)}>삭제</button>
               </div>
@@ -312,6 +343,26 @@ export default function PostsPage() {
           <label className="form-label">첫 댓글 (자동 스레드 / 선택)</label>
           <textarea className="form-textarea" placeholder="본문 작성 후 이어질 첫 번째 답글을 입력하세요. 링크를 첨부하기 좋습니다." value={form.replyContent}
             onChange={(e) => setForm({ ...form, replyContent: e.target.value })} rows={3} />
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">발행 방식</label>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <input type="radio" id="publish-pending" checked={!form.scheduledAt} onChange={() => setForm({ ...form, scheduledAt: '' })} />
+            <label htmlFor="publish-pending">큐 대기 (순차 자동 발행)</label>
+            
+            <input type="radio" id="publish-scheduled" checked={!!form.scheduledAt} onChange={() => {
+              const d = new Date();
+              const tzOffset = d.getTimezoneOffset() * 60000;
+              setForm({ ...form, scheduledAt: (new Date(d - tzOffset)).toISOString().slice(0, 16) });
+            }} style={{ marginLeft: '12px' }} />
+            <label htmlFor="publish-scheduled">예약 발행 (지정된 시간에 최우선 발행)</label>
+          </div>
+          {form.scheduledAt !== '' && (
+            <div style={{ marginTop: '8px' }}>
+              <input type="datetime-local" className="form-input" value={form.scheduledAt} onChange={(e) => setForm({ ...form, scheduledAt: e.target.value })} />
+            </div>
+          )}
         </div>
 
       </Modal>

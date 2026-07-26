@@ -40,21 +40,35 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const body = await request.json();
-    const post = await prisma.post.create({
+    const { accountId, platform, content, templateId, mediaUrl, mediaType, replyContent, scheduledAt } = await request.json();
+    if (!accountId || !platform || !content) {
+      return NextResponse.json({ error: '필수 필드가 누락되었습니다.' }, { status: 400 });
+    }
+
+    let parsedScheduledAt = null;
+    let initialStatus = 'pending';
+    
+    if (scheduledAt) {
+      parsedScheduledAt = new Date(scheduledAt);
+      initialStatus = 'scheduled';
+    }
+
+    const newPost = await prisma.post.create({
       data: {
-        accountId: parseInt(body.accountId),
-        platform: body.platform,
-        content: body.content,
-        mediaUrl: body.mediaUrl || null,
-        mediaType: body.mediaType || null,
-        replyContent: body.replyContent || null,
-        templateId: body.templateId ? parseInt(body.templateId) : null,
-        status: 'pending',
+        accountId: parseInt(accountId),
+        platform,
+        content,
+        templateId: templateId ? parseInt(templateId) : null,
+        mediaUrl: mediaUrl || null,
+        mediaType: mediaUrl ? (mediaType || 'image') : null,
+        replyContent: replyContent || null,
+        scheduledAt: parsedScheduledAt,
+        status: initialStatus,
       },
+      include: { account: true, template: true },
     });
-    return NextResponse.json(post, { status: 201 });
+    return NextResponse.json(newPost);
   } catch (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

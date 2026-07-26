@@ -39,18 +39,37 @@ export async function POST(request) {
   const platform = searchParams.get('platform'); // threads | x | null(전체)
   const limit = Math.min(parseInt(searchParams.get('limit') || '1'), 10); // 최대 10건
 
-  // 3. 발행 대상 조회 (pending 상태, 적재 순서)
-  const where = { status: 'pending' };
-  if (platform) where.platform = platform;
+  // 3. 발행 대상 조회
+  // 먼저 시간이 지난(예약 시간이 된) 예약 게시물을 우선 조회
+  const scheduledWhere = {
+    status: 'scheduled',
+    scheduledAt: { lte: new Date() },
+  };
+  if (platform) scheduledWhere.platform = platform;
 
-  const pendingPosts = await prisma.post.findMany({
-    where,
+  let postsToPublish = await prisma.post.findMany({
+    where: scheduledWhere,
     include: { account: true },
-    orderBy: { id: 'asc' }, // 적재 순서
+    orderBy: { scheduledAt: 'asc' },
     take: limit,
   });
 
-  if (pendingPosts.length === 0) {
+  // 예약 게시물로 limit을 다 채우지 못했다면, 일반 대기(pending) 게시물로 채움
+  if (postsToPublish.length < limit) {
+    const pendingWhere = { status: 'pending' };
+    if (platform) pendingWhere.platform = platform;
+
+    const pendingPosts = await prisma.post.findMany({
+      where: pendingWhere,
+      include: { account: true },
+      orderBy: { id: 'asc' }, // 적재 순서
+      take: limit - postsToPublish.length,
+    });
+    
+    postsToPublish = [...postsToPublish, ...pendingPosts];
+  }
+
+  if (postsToPublish.length === 0) {
     return NextResponse.json({
       published: 0,
       failed: 0,
@@ -61,7 +80,7 @@ export async function POST(request) {
   // 4. 순차 발행
   const results = [];
 
-  for (const post of pendingPosts) {
+  for (const post of postsToPublish) {
     // Threads 발행
     if (post.platform === 'threads') {
       const userId = post.account.threadsUserId || process.env.THREADS_USER_ID;
