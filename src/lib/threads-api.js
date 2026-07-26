@@ -4,7 +4,7 @@
  */
 
 const API_BASE = 'https://graph.threads.net/v1.0';
-const PUBLISH_WAIT_MS = 30000; // Meta 권장 대기 시간
+const MEDIA_PUBLISH_WAIT_MS = 5000;
 
 async function getMetaError(response, fallback) {
   const errText = await response.text();
@@ -79,8 +79,11 @@ async function publishSinglePost(text, userId, accessToken, mediaUrl = null, med
 
     const { id: creationId } = await createRes.json();
 
-    // 2단계: 처리 대기 (Meta 권장 30초)
-    await new Promise((resolve) => setTimeout(resolve, PUBLISH_WAIT_MS));
+    // 텍스트 컨테이너는 생성 직후 발행할 수 있습니다.
+    // 이미지/영상만 처리 시간을 짧게 주어 Netlify 함수 제한시간을 넘지 않도록 합니다.
+    if (payload.media_type !== 'TEXT') {
+      await new Promise((resolve) => setTimeout(resolve, MEDIA_PUBLISH_WAIT_MS));
+    }
 
     // 3단계: 게시물 발행
     const publishRes = await fetch(`${API_BASE}/${userId}/threads_publish`, {

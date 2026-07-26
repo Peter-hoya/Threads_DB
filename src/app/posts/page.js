@@ -75,8 +75,16 @@ export default function PostsPage() {
     if (!confirm('이 게시물을 즉시 발행하시겠습니까?')) return;
     try {
       const res = await fetch(`/api/posts/${id}/publish`, { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || '발행 실패');
+      const responseText = await res.text();
+      let data = {};
+      try {
+        data = responseText ? JSON.parse(responseText) : {};
+      } catch {
+        throw new Error(`서버 응답 오류 (${res.status})`);
+      }
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || data.message || `발행 실패 (${res.status})`);
+      }
       alert('✅ 즉시 발행 성공!');
       fetchPosts();
     } catch (err) {
