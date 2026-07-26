@@ -32,8 +32,7 @@ export async function POST(request, { params }) {
         { status: 500 }
       );
     }
-
-    const result = await publishToThreads(post.content, userId, accessToken);
+    const result = await publishToThreads(post, userId, accessToken);
 
     if (result.success) {
       const updated = await prisma.post.update({

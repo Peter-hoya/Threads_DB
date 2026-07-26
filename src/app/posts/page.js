@@ -27,7 +27,7 @@ export default function PostsPage() {
   // Modal
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState({ accountId: '', platform: 'threads', content: '' });
+  const [form, setForm] = useState({ accountId: '', platform: 'threads', content: '', mediaUrl: '', mediaType: 'image', replyContent: '' });
 
   // Bulk Modal
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
@@ -76,13 +76,16 @@ export default function PostsPage() {
       accountId: String(p.accountId),
       platform: p.platform,
       content: p.content,
+      mediaUrl: p.mediaUrl || '',
+      mediaType: p.mediaType || 'image',
+      replyContent: p.replyContent || '',
     });
     setModalOpen(true);
   };
 
   const openNewModal = () => {
     setEditingId(null);
-    setForm({ accountId: accounts[0]?.id?.toString() || '', platform: 'threads', content: '' });
+    setForm({ accountId: accounts[0]?.id?.toString() || '', platform: 'threads', content: '', mediaUrl: '', mediaType: 'image', replyContent: '' });
     setModalOpen(true);
   };
 
@@ -182,6 +185,16 @@ export default function PostsPage() {
                   {p.template.templateCode}
                 </span>
               )}
+              {p.mediaUrl && (
+                <span style={{ fontSize: '11px', background: 'rgba(236, 72, 153, 0.1)', color: '#ec4899', padding: '2px 6px', borderRadius: '4px' }}>
+                  {p.mediaType === 'video' ? '🎬 비디오' : '🖼️ 이미지'}
+                </span>
+              )}
+              {p.replyContent && (
+                <span style={{ fontSize: '11px', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', padding: '2px 6px', borderRadius: '4px' }}>
+                  💬 답글
+                </span>
+              )}
             </div>
             <div className="post-card__content">{p.content}</div>
             <div className="post-card__footer">
@@ -242,6 +255,25 @@ export default function PostsPage() {
           <label className="form-label">게시물 내용 *</label>
           <textarea className="form-textarea" placeholder="게시물 내용을 입력하세요...&#10;줄바꿈도 그대로 반영됩니다." value={form.content}
             onChange={(e) => setForm({ ...form, content: e.target.value })} rows={8} />
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">미디어 (선택)</label>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <select className="form-select" style={{ width: '120px' }} value={form.mediaType} onChange={(e) => setForm({ ...form, mediaType: e.target.value })}>
+              <option value="image">이미지</option>
+              <option value="video">동영상</option>
+            </select>
+            <input type="text" className="form-input" placeholder="미디어 파일의 웹 URL 주소를 입력하세요 (예: https://...)" style={{ flex: 1 }}
+              value={form.mediaUrl} onChange={(e) => setForm({ ...form, mediaUrl: e.target.value })} />
+          </div>
+          <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>* 외부에서 접근 가능한 웹 주소를 입력해야 정상 발행됩니다.</p>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">첫 댓글 (자동 스레드 / 선택)</label>
+          <textarea className="form-textarea" placeholder="본문 작성 후 이어질 첫 번째 답글을 입력하세요. 링크를 첨부하기 좋습니다." value={form.replyContent}
+            onChange={(e) => setForm({ ...form, replyContent: e.target.value })} rows={3} />
         </div>
 
       </Modal>

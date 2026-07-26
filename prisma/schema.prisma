@@ -63,6 +63,11 @@ model Post {
   content     String   @map("content")        // 발행할 텍스트 (줄바꿈 포함)
   templateId  Int?     @map("template_id")    // 사용된 템플릿 (선택)
 
+  // 미디어 및 첫 댓글(답글)
+  mediaUrl    String?  @map("media_url")      // 사진 또는 영상 외부 링크
+  mediaType   String?  @map("media_type")     // 'image' 또는 'video'
+  replyContent String? @map("reply_content")  // 본문 바로 아래 달릴 첫 댓글(스레드) 내용
+
   // 발행 관련
   status      String   @default("pending") @map("status") // pending, scheduled, published, failed
   scheduledAt DateTime? @map("scheduled_at")  // 발행 예정 시간
