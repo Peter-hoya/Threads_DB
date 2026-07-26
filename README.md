@@ -43,8 +43,10 @@ npm run dev
 
 이 프로젝트는 Netlify를 통해 프로덕션 환경에 호스팅됩니다.
 
-### 빌드 및 배포 설정 (`netlify.toml`)
+### 빌드 및 배포 설정 (`netlify.toml` & `next.config.mjs`)
 - **빌드 명령어**: `npm ci && npm run build`
 - **배포 디렉토리**: `.next`
 - **노드 버전**: 20
 - **환경 변수**: Netlify 설정 대시보드에서 `NETLIFY_DATABASE_URL`을 Neon DB 연결 정보로 등록해야 빌드 및 가동이 정상적으로 작동합니다.
+- **Next.js Standalone**: Netlify 빌드 및 배포 최적화를 위해 `next.config.mjs`에 `output: 'standalone'` 옵션이 적용되어 있습니다.
+- **Prisma Binary Targets**: Netlify의 리눅스 배포 환경(OpenSSL 3.0.x 등)을 지원하기 위해 `schema.prisma` 파일의 generator client에 `binaryTargets = ["native", "rhel-openssl-3.0.x"]`가 추가되었습니다.
