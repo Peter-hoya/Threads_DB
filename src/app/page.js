@@ -56,7 +56,7 @@ export default function HomePage() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '28px' }}>
+      <div className="dashboard-panels">
         {/* 계정별 현황 */}
         <div className="card">
           <div className="card-header"><h3>👤 계정별 현황</h3></div>
@@ -65,14 +65,14 @@ export default function HomePage() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               {accountStats.map((a) => (
-                <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: 'var(--bg-input)', borderRadius: 'var(--radius-md)' }}>
+                <div key={a.id} style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '12px', padding: '12px 16px', background: 'var(--bg-input)', borderRadius: 'var(--radius-md)' }}>
                   <div>
                     <div style={{ fontWeight: 700, fontSize: '15px' }}>{a.name}</div>
                     <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
                       게시물 {a.postCount}개 · 템플릿 {a.templateCount}개
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                     <span className="badge badge--published">✅ {a.byStatus.published}</span>
                     <span className="badge badge--pending">⏳ {a.byStatus.pending}</span>
                     {a.byStatus.failed > 0 && <span className="badge badge--failed">❌ {a.byStatus.failed}</span>}
@@ -88,7 +88,7 @@ export default function HomePage() {
           <div className="card-header"><h3>📦 발행 큐 현황</h3></div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             {/* 플랫폼별 대기 수 */}
-            <div style={{ display: 'flex', gap: '12px' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
               {platformStats.map((p) => {
                 const pendingCount = accountStats.reduce((sum, a) => sum + (a.byPlatform?.[p.platform] || 0), 0);
                 return (

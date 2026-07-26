@@ -195,6 +195,93 @@ export default function PostsPage() {
         </div>
       </div>
 
+
+      {modalOpen ? (
+        <div style={{ background: 'var(--bg-card)', padding: '32px', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', marginTop: '24px', boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', paddingBottom: '16px', borderBottom: '1px solid var(--border)' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: 700 }}>{editingId ? '✏️ 게시물 수정' : '📝 새 게시물 작성'}</h3>
+            <button className="btn btn--secondary btn--sm" onClick={() => { setModalOpen(false); setEditingId(null); }}>닫기 ✕</button>
+          </div>
+          
+          <div style={{ maxWidth: '800px' }}>
+        <div className="form-group">
+          <label className="form-label">계정 *</label>
+          <select className="form-select" value={form.accountId} onChange={(e) => setForm({ ...form, accountId: e.target.value })}>
+            <option value="">선택</option>
+            {accounts.map((a) => <option key={a.id} value={a.id}>{a.accountName}</option>)}
+          </select>
+        </div>
+        <div className="form-group">
+          <label className="form-label">플랫폼 *</label>
+          <select className="form-select" value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value })}>
+            <option value="threads">Threads</option>
+            <option value="x">X (Twitter)</option>
+          </select>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">게시물 내용 *</label>
+          <textarea className="form-textarea" placeholder="게시물 내용을 입력하세요...&#10;줄바꿈도 그대로 반영됩니다." value={form.content}
+            onChange={(e) => setForm({ ...form, content: e.target.value })} rows={8} />
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">미디어 (선택)</label>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+            <input type="file" id="media-upload" accept="image/*,video/*" style={{ display: 'none' }} onChange={handleFileUpload} />
+            <button type="button" className="btn btn--secondary btn--sm" onClick={() => document.getElementById('media-upload').click()} disabled={isUploading}>
+              {isUploading ? '⏳ 업로드 중...' : '📁 내 PC에서 선택'}
+            </button>
+            {isUploading && <span style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '32px' }}>서버에 파일을 저장하는 중입니다...</span>}
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <select className="form-select" style={{ width: '120px' }} value={form.mediaType} onChange={(e) => setForm({ ...form, mediaType: e.target.value })}>
+              <option value="image">이미지</option>
+              <option value="video">동영상</option>
+            </select>
+            <input type="text" className="form-input" placeholder="미디어 파일의 웹 URL 주소를 입력하세요 (예: https://...)" style={{ flex: 1 }}
+              value={form.mediaUrl} onChange={(e) => setForm({ ...form, mediaUrl: e.target.value })} />
+          </div>
+          <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>* 외부에서 접근 가능한 웹 주소를 입력해야 정상 발행됩니다.</p>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">첫 댓글 (자동 스레드 / 선택)</label>
+          <textarea className="form-textarea" placeholder="본문 작성 후 이어질 첫 번째 답글을 입력하세요. 링크를 첨부하기 좋습니다." value={form.replyContent}
+            onChange={(e) => setForm({ ...form, replyContent: e.target.value })} rows={3} />
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">발행 방식</label>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <input type="radio" id="publish-pending" checked={!form.scheduledAt} onChange={() => setForm({ ...form, scheduledAt: '' })} />
+            <label htmlFor="publish-pending">큐 대기 (순차 자동 발행)</label>
+            
+            <input type="radio" id="publish-scheduled" checked={!!form.scheduledAt} onChange={() => {
+              const d = new Date();
+              const tzOffset = d.getTimezoneOffset() * 60000;
+              setForm({ ...form, scheduledAt: (new Date(d - tzOffset)).toISOString().slice(0, 16) });
+            }} style={{ marginLeft: '12px' }} />
+            <label htmlFor="publish-scheduled">예약 발행 (지정된 시간에 최우선 발행)</label>
+          </div>
+          {form.scheduledAt !== '' && (
+            <div style={{ marginTop: '8px' }}>
+              <input type="datetime-local" className="form-input" value={form.scheduledAt} onChange={(e) => setForm({ ...form, scheduledAt: e.target.value })} />
+            </div>
+          )}
+        </div>
+
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '32px', paddingTop: '24px', borderTop: '1px solid var(--border)' }}>
+            <button className="btn btn--secondary" onClick={() => { setModalOpen(false); setEditingId(null); }} style={{ padding: '0 24px' }}>취소</button>
+            <button className="btn btn--primary" onClick={handleSubmit} disabled={!form.content.trim() || !form.accountId} style={{ padding: '0 32px' }}>
+              {editingId ? '수정 완료' : '게시물 등록'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
       {/* Tabs */}
       <div className="tabs">
         {[{ label: '전체', value: '' }, { label: '⏳ 대기', value: 'pending' }, { label: '📅 예약', value: 'scheduled' }, { label: '✅ 완료', value: 'published' }, { label: '❌ 실패', value: 'failed' }].map((t) => (
@@ -284,88 +371,8 @@ export default function PostsPage() {
         </div>
       )}
 
-      {/* New/Edit Modal */}
-      <Modal
-        open={modalOpen}
-        title={editingId ? '게시물 수정' : '새 게시물 작성'}
-        onClose={() => { setModalOpen(false); setEditingId(null); }}
-        footer={
-          <>
-            <button className="btn btn--secondary" onClick={() => setModalOpen(false)}>취소</button>
-            <button className="btn btn--primary" onClick={handleSubmit} disabled={!form.content.trim() || !form.accountId}>
-              {editingId ? '수정' : '등록'}
-            </button>
-          </>
-        }
-      >
-        <div className="form-group">
-          <label className="form-label">계정 *</label>
-          <select className="form-select" value={form.accountId} onChange={(e) => setForm({ ...form, accountId: e.target.value })}>
-            <option value="">선택</option>
-            {accounts.map((a) => <option key={a.id} value={a.id}>{a.accountName}</option>)}
-          </select>
-        </div>
-        <div className="form-group">
-          <label className="form-label">플랫폼 *</label>
-          <select className="form-select" value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value })}>
-            <option value="threads">Threads</option>
-            <option value="x">X (Twitter)</option>
-          </select>
-        </div>
-
-        <div className="form-group">
-          <label className="form-label">게시물 내용 *</label>
-          <textarea className="form-textarea" placeholder="게시물 내용을 입력하세요...&#10;줄바꿈도 그대로 반영됩니다." value={form.content}
-            onChange={(e) => setForm({ ...form, content: e.target.value })} rows={8} />
-        </div>
-
-        <div className="form-group">
-          <label className="form-label">미디어 (선택)</label>
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-            <input type="file" id="media-upload" accept="image/*,video/*" style={{ display: 'none' }} onChange={handleFileUpload} />
-            <button type="button" className="btn btn--secondary btn--sm" onClick={() => document.getElementById('media-upload').click()} disabled={isUploading}>
-              {isUploading ? '⏳ 업로드 중...' : '📁 내 PC에서 선택'}
-            </button>
-            {isUploading && <span style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '32px' }}>서버에 파일을 저장하는 중입니다...</span>}
-          </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <select className="form-select" style={{ width: '120px' }} value={form.mediaType} onChange={(e) => setForm({ ...form, mediaType: e.target.value })}>
-              <option value="image">이미지</option>
-              <option value="video">동영상</option>
-            </select>
-            <input type="text" className="form-input" placeholder="미디어 파일의 웹 URL 주소를 입력하세요 (예: https://...)" style={{ flex: 1 }}
-              value={form.mediaUrl} onChange={(e) => setForm({ ...form, mediaUrl: e.target.value })} />
-          </div>
-          <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>* 외부에서 접근 가능한 웹 주소를 입력해야 정상 발행됩니다.</p>
-        </div>
-
-        <div className="form-group">
-          <label className="form-label">첫 댓글 (자동 스레드 / 선택)</label>
-          <textarea className="form-textarea" placeholder="본문 작성 후 이어질 첫 번째 답글을 입력하세요. 링크를 첨부하기 좋습니다." value={form.replyContent}
-            onChange={(e) => setForm({ ...form, replyContent: e.target.value })} rows={3} />
-        </div>
-
-        <div className="form-group">
-          <label className="form-label">발행 방식</label>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <input type="radio" id="publish-pending" checked={!form.scheduledAt} onChange={() => setForm({ ...form, scheduledAt: '' })} />
-            <label htmlFor="publish-pending">큐 대기 (순차 자동 발행)</label>
-            
-            <input type="radio" id="publish-scheduled" checked={!!form.scheduledAt} onChange={() => {
-              const d = new Date();
-              const tzOffset = d.getTimezoneOffset() * 60000;
-              setForm({ ...form, scheduledAt: (new Date(d - tzOffset)).toISOString().slice(0, 16) });
-            }} style={{ marginLeft: '12px' }} />
-            <label htmlFor="publish-scheduled">예약 발행 (지정된 시간에 최우선 발행)</label>
-          </div>
-          {form.scheduledAt !== '' && (
-            <div style={{ marginTop: '8px' }}>
-              <input type="datetime-local" className="form-input" value={form.scheduledAt} onChange={(e) => setForm({ ...form, scheduledAt: e.target.value })} />
-            </div>
-          )}
-        </div>
-
-      </Modal>
+        </>
+      )}
 
       {/* Bulk Modal */}
       <Modal
