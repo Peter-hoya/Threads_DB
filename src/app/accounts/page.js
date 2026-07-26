@@ -87,10 +87,10 @@ export default function AccountsPage() {
             <div style={{ margin: '12px 0 4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{
                 display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%',
-                background: a._hasToken ? 'var(--success)' : 'var(--text-muted)',
+                background: a._hasToken ? 'var(--success)' : 'var(--warning)',
               }} />
-              <span style={{ fontSize: '13px', color: a._hasToken ? 'var(--success)' : 'var(--text-muted)', fontWeight: 500 }}>
-                {a._hasToken ? 'Threads API 연동됨' : 'Threads 미연동'}
+              <span style={{ fontSize: '13px', color: a._hasToken ? 'var(--success)' : 'var(--warning)', fontWeight: 500 }}>
+                {a._hasToken ? 'Threads API 연동됨' : '우회 모드 (실제 발행 안됨)'}
               </span>
               {a.threadsUserId && (
                 <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
@@ -135,8 +135,9 @@ export default function AccountsPage() {
         </div>
 
         <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '20px 0 16px' }} />
-        <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-          🔗 <strong>Threads API 연동</strong> — 이 계정에서 직접 게시물을 발행하려면 아래 정보를 입력하세요.
+        <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px', lineHeight: 1.5 }}>
+          🔗 <strong>Threads API 연동</strong> — 메타 API를 연동하려면 아래 정보를 입력하세요.<br />
+          <span style={{ color: 'var(--warning)', display: 'inline-block', marginTop: '4px' }}>⚠️ 비워둘 경우 실제 발행 없이 <strong>가짜(Mock) 성공 처리로 우회(Bypass)</strong>됩니다. (UI/기능 테스트용)</span>
         </p>
 
         <div className="form-group">
