@@ -27,6 +27,7 @@ export default function PostsPage() {
   // Modal
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
   const [form, setForm] = useState({ accountId: '', platform: 'threads', content: '', mediaUrl: '', mediaType: 'image', replyContent: '' });
 
   // Bulk Modal
@@ -66,6 +67,36 @@ export default function PostsPage() {
     if (!confirm('이 게시물을 삭제하시겠습니까?')) return;
     await fetch(`/api/posts/${id}`, { method: 'DELETE' });
     fetchPosts();
+  };
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (file.size > 15 * 1024 * 1024) {
+      alert('파일 크기는 15MB를 초과할 수 없습니다.');
+      return;
+    }
+
+    setIsUploading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '업로드 실패');
+      
+      setForm(prev => ({ ...prev, mediaUrl: data.url, mediaType: data.mediaType }));
+    } catch (error) {
+      alert(`업로드 에러: ${error.message}`);
+    } finally {
+      setIsUploading(false);
+      e.target.value = '';
+    }
   };
 
 
@@ -259,6 +290,13 @@ export default function PostsPage() {
 
         <div className="form-group">
           <label className="form-label">미디어 (선택)</label>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+            <input type="file" id="media-upload" accept="image/*,video/*" style={{ display: 'none' }} onChange={handleFileUpload} />
+            <button type="button" className="btn btn--secondary btn--sm" onClick={() => document.getElementById('media-upload').click()} disabled={isUploading}>
+              {isUploading ? '⏳ 업로드 중...' : '📁 내 PC에서 선택'}
+            </button>
+            {isUploading && <span style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '32px' }}>서버에 파일을 저장하는 중입니다...</span>}
+          </div>
           <div style={{ display: 'flex', gap: '8px' }}>
             <select className="form-select" style={{ width: '120px' }} value={form.mediaType} onChange={(e) => setForm({ ...form, mediaType: e.target.value })}>
               <option value="image">이미지</option>
