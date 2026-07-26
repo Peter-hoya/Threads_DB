@@ -4,7 +4,12 @@
  */
 
 const API_BASE = 'https://graph.threads.net/v1.0';
-const MEDIA_PUBLISH_WAIT_MS = 5000;
+const CONTAINER_POLL_DELAYS_MS = [300, 600, 900, 1200, 1500];
+const PUBLISH_RETRY_DELAY_MS = 500;
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 async function getMetaError(response, fallback) {
   const errText = await response.text();
@@ -42,6 +47,53 @@ async function resolveThreadsUserId(accessToken) {
 }
 
 /**
+ * Meta가 막 생성한 컨테이너를 발행 API에 노출하기까지 짧은 처리 시간이 필요할 수 있습니다.
+ * 고정으로 오래 기다리지 않고 FINISHED 상태를 확인해 Netlify 실행 제한 안에서 발행합니다.
+ */
+async function waitForContainerReady(creationId, accessToken) {
+  let lastStatus = 'IN_PROGRESS';
+  let lastError = '';
+
+  for (let attempt = 0; attempt <= CONTAINER_POLL_DELAYS_MS.length; attempt += 1) {
+    const params = new URLSearchParams({
+      fields: 'id,status,error_message',
+      access_token: accessToken,
+    });
+    const response = await fetch(`${API_BASE}/${creationId}?${params.toString()}`);
+
+    if (response.ok) {
+      const container = await response.json();
+      lastStatus = container.status || container.status_code || lastStatus;
+
+      if (lastStatus === 'FINISHED' || lastStatus === 'PUBLISHED') {
+        return { success: true, status: lastStatus };
+      }
+
+      if (lastStatus === 'ERROR' || lastStatus === 'EXPIRED') {
+        return {
+          success: false,
+          error: `컨테이너 처리 실패 (${lastStatus}): ${container.error_message || 'Meta에서 상세 오류를 제공하지 않았습니다.'}`,
+        };
+      }
+    } else {
+      lastError = await getMetaError(response, '컨테이너 상태를 확인할 수 없습니다.');
+
+      // 생성 직후의 "resource does not exist"는 Meta 내부 전파 지연일 수 있으므로 재확인합니다.
+      if (!lastError.toLowerCase().includes('requested resource does not exist')) {
+        return { success: false, error: `컨테이너 상태 확인 실패: ${lastError}` };
+      }
+    }
+
+    if (attempt < CONTAINER_POLL_DELAYS_MS.length) {
+      await wait(CONTAINER_POLL_DELAYS_MS[attempt]);
+    }
+  }
+
+  const detail = lastError || `현재 상태: ${lastStatus}`;
+  return { success: false, error: `컨테이너 준비 시간 초과: ${detail}` };
+}
+
+/**
  * 단일 게시물을 Threads에 발행하는 헬퍼 함수
  */
 async function publishSinglePost(text, userId, accessToken, mediaUrl = null, mediaType = null, replyToId = null) {
@@ -68,8 +120,8 @@ async function publishSinglePost(text, userId, accessToken, mediaUrl = null, med
     // 1단계: 미디어 컨테이너 생성
     const createRes = await fetch(`${API_BASE}/${userId}/threads`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(payload).toString(),
     });
 
     if (!createRes.ok) {
@@ -78,30 +130,43 @@ async function publishSinglePost(text, userId, accessToken, mediaUrl = null, med
     }
 
     const { id: creationId } = await createRes.json();
+    if (!creationId) {
+      return { success: false, error: '컨테이너 생성 실패: 생성 ID가 응답에 없습니다.' };
+    }
 
-    // 텍스트 컨테이너는 생성 직후 발행할 수 있습니다.
-    // 이미지/영상만 처리 시간을 짧게 주어 Netlify 함수 제한시간을 넘지 않도록 합니다.
-    if (payload.media_type !== 'TEXT') {
-      await new Promise((resolve) => setTimeout(resolve, MEDIA_PUBLISH_WAIT_MS));
+    const readyResult = await waitForContainerReady(creationId, accessToken);
+    if (!readyResult.success) {
+      return readyResult;
     }
 
     // 3단계: 게시물 발행
-    const publishRes = await fetch(`${API_BASE}/${userId}/threads_publish`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        creation_id: creationId,
-        access_token: accessToken,
-      }),
-    });
+    let publishError = '';
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const publishRes = await fetch(`${API_BASE}/${userId}/threads_publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          creation_id: creationId,
+          access_token: accessToken,
+        }).toString(),
+      });
 
-    if (!publishRes.ok) {
-      const error = await getMetaError(publishRes, 'Meta API 응답이 비어 있습니다.');
-      return { success: false, error: `발행 실패: ${error}` };
+      if (publishRes.ok) {
+        const { id: postId } = await publishRes.json();
+        return { success: true, postId: String(postId) };
+      }
+
+      publishError = await getMetaError(publishRes, 'Meta API 응답이 비어 있습니다.');
+      const isTransientMissingResource = publishError.toLowerCase().includes('requested resource does not exist');
+
+      if (!isTransientMissingResource || attempt === 1) {
+        return { success: false, error: `발행 실패: ${publishError}` };
+      }
+
+      await wait(PUBLISH_RETRY_DELAY_MS);
     }
 
-    const { id: postId } = await publishRes.json();
-    return { success: true, postId: String(postId) };
+    return { success: false, error: `발행 실패: ${publishError}` };
   } catch (error) {
     return { success: false, error: error.message };
   }
