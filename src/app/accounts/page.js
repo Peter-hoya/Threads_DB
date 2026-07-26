@@ -136,23 +136,9 @@ export default function AccountsPage() {
 
         <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '20px 0 16px' }} />
         <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px', lineHeight: 1.5 }}>
-          🔗 <strong>Threads API 연동</strong> — 메타 API를 연동하려면 아래 정보를 입력하세요.<br />
-          <span style={{ color: 'var(--warning)', display: 'inline-block', marginTop: '4px' }}>⚠️ 비워둘 경우 실제 발행 없이 <strong>가짜(Mock) 성공 처리로 우회(Bypass)</strong>됩니다. (UI/기능 테스트용)</span>
+          🔗 <strong>Threads API 연동 (비활성화됨)</strong><br />
+          <span style={{ color: 'var(--warning)', display: 'inline-block', marginTop: '4px' }}>⚠️ 현재 시스템은 테스트를 위해 <strong>가짜(Mock) 성공 처리로 우회(Bypass)</strong>되도록 설정되어 있습니다. 토큰 입력은 필요하지 않습니다.</span>
         </p>
-
-        <div className="form-group">
-          <label className="form-label">Threads User ID</label>
-          <input className="form-input" placeholder="예: 27383656767897622" value={form.threadsUserId}
-            onChange={(e) => setForm({ ...form, threadsUserId: e.target.value })} />
-        </div>
-        <div className="form-group">
-          <label className="form-label">Threads Access Token</label>
-          <input className="form-input" type="password" placeholder={editingId ? '변경하려면 새 토큰 입력 (비우면 기존 유지)' : 'Meta 개발자 포털에서 발급받은 토큰'} value={form.threadsAccessToken}
-            onChange={(e) => setForm({ ...form, threadsAccessToken: e.target.value })} />
-          <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-            토큰은 암호화되어 저장되며, 화면에 노출되지 않습니다.
-          </span>
-        </div>
       </Modal>
     </>
   );
