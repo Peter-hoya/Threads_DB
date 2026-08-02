@@ -1,5 +1,14 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
+import { buildAuditEvent } from '@/lib/audit';
+import { validatePostDraft } from '@/lib/post-policy';
+
+const MAX_PAGE_SIZE = 100;
+
+function asPositiveInt(value, fallback) {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
 
 export async function GET(request) {
   try {
@@ -7,32 +16,48 @@ export async function GET(request) {
     const status = searchParams.get('status');
     const accountId = searchParams.get('accountId');
     const platform = searchParams.get('platform');
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '20');
-    const sort = searchParams.get('sort') || 'desc'; // asc: 적재순서, desc: 최신순
+    const page = asPositiveInt(searchParams.get('page'), 1);
+    const limit = Math.min(asPositiveInt(searchParams.get('limit'), 20), MAX_PAGE_SIZE);
+    const sort = searchParams.get('sort') === 'asc' ? 'asc' : 'desc';
 
     const where = {};
     if (status) where.status = status;
-    if (accountId) where.accountId = parseInt(accountId);
+    if (accountId) where.accountId = asPositiveInt(accountId, 0);
     if (platform) where.platform = platform;
-
-    const orderBy = sort === 'asc' ? { id: 'asc' } : { createdAt: 'desc' };
 
     const [posts, total] = await Promise.all([
       prisma.post.findMany({
         where,
         include: {
-          account: { select: { accountName: true } },
+          account: {
+            select: {
+              accountName: true,
+              role: true,
+              postingEnabled: true,
+              isActive: true,
+            },
+          },
           template: { select: { templateCode: true, templateName: true } },
+          jobs: {
+            where: { status: { in: ['queued', 'running', 'failed', 'dead'] } },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: { status: true, attempts: true, runAt: true, lastError: true },
+          },
         },
-        orderBy,
+        orderBy: sort === 'asc' ? { id: 'asc' } : { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
       }),
       prisma.post.count({ where }),
     ]);
 
-    return NextResponse.json({ posts, total, page, totalPages: Math.ceil(total / limit) });
+    return NextResponse.json({
+      posts,
+      total,
+      page,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -40,35 +65,57 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
-    const { accountId, platform, content, templateId, mediaUrl, mediaType, replyContent, scheduledAt } = await request.json();
-    if (!accountId || !platform || !content) {
-      return NextResponse.json({ error: '필수 필드가 누락되었습니다.' }, { status: 400 });
-    }
+    const input = await request.json();
+    const data = validatePostDraft(input);
 
-    let parsedScheduledAt = null;
-    let initialStatus = 'pending';
-    
-    if (scheduledAt) {
-      parsedScheduledAt = new Date(scheduledAt);
-      initialStatus = 'scheduled';
-    }
+    const post = await prisma.$transaction(async (tx) => {
+      const account = await tx.account.findUnique({
+        where: { id: data.accountId },
+        select: { id: true },
+      });
+      if (!account) {
+        const error = new Error('계정을 찾을 수 없습니다.');
+        error.status = 404;
+        throw error;
+      }
+      if (data.templateId) {
+        const templates = await tx.$queryRaw`
+          SELECT "id"
+          FROM "templates"
+          WHERE "id" = ${data.templateId}
+            AND "account_id" = ${data.accountId}
+            AND "is_active" = true
+          FOR SHARE
+        `;
+        if (templates.length === 0) {
+          throw new Error('선택한 활성 템플릿은 발행 계정에 속하지 않습니다.');
+        }
+      }
 
-    const newPost = await prisma.post.create({
-      data: {
-        accountId: parseInt(accountId),
-        platform,
-        content,
-        templateId: templateId ? parseInt(templateId) : null,
-        mediaUrl: mediaUrl || null,
-        mediaType: mediaUrl ? (mediaType || 'image') : null,
-        replyContent: replyContent || null,
-        scheduledAt: parsedScheduledAt,
-        status: initialStatus,
-      },
-      include: { account: true, template: true },
+      const created = await tx.post.create({
+        data: {
+          ...data,
+          status: 'draft',
+          approvalStatus: 'draft',
+        },
+        include: {
+          account: { select: { accountName: true, role: true, postingEnabled: true } },
+          template: { select: { templateCode: true, templateName: true } },
+        },
+      });
+      await tx.auditEvent.create({
+        data: buildAuditEvent(request, {
+          action: 'post.created',
+          entityType: 'post',
+          entityId: created.id,
+          accountId: created.accountId,
+        }),
+      });
+      return created;
     });
-    return NextResponse.json(newPost);
+
+    return NextResponse.json(post, { status: 201 });
   } catch (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: error.status || 400 });
   }
 }

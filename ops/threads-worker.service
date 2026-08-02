@@ -1,0 +1,37 @@
+[Unit]
+Description=Threads official API durable publish worker
+Documentation=file:/opt/threads-db/worker/README.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=threads-worker
+Group=threads-worker
+WorkingDirectory=/opt/threads-db
+Environment=NODE_ENV=production
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/etc/threads-worker.env
+ExecStart=/usr/bin/env node /opt/threads-db/worker/src/main.js
+Restart=on-failure
+RestartSec=10s
+TimeoutStopSec=40s
+KillSignal=SIGTERM
+UMask=0077
+
+# The worker only needs outbound network access and read access to the app.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

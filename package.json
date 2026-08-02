@@ -7,8 +7,19 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "test": "node --test src/lib/*.test.js worker/test/*.test.js",
+    "test:web": "node --test src/lib/*.test.js",
+    "test:worker": "node --test worker/test/*.test.js",
+    "env:check": "node scripts/check-env.mjs",
+    "worker:start": "node worker/src/main.js",
+    "worker:dry-run": "DRY_RUN=1 DRY_RUN_ONCE=1 node worker/src/main.js",
     "postinstall": "prisma generate",
     "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:migration:bundle": "node scripts/build-neon-migration-bundle.mjs",
+    "db:migrate-tokens": "node scripts/migrate-legacy-tokens.mjs",
+    "db:import:legacy": "node scripts/import-legacy-data.mjs",
+    "db:import:legacy:apply": "node scripts/import-legacy-data.mjs --apply",
     "db:seed": "node prisma/seed.js",
     "db:studio": "prisma studio"
   },
@@ -19,15 +30,20 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@netlify/blobs": "^10.7.10",
+    "@netlify/blobs": "^10.7.11",
     "@prisma/client": "^5.18.0",
-    "next": "^16.2.9",
+    "next": "^16.2.12",
     "openai": "^6.42.0",
     "prisma": "^5.18.0",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react-dom": "^19.2.7",
+    "tus-js-client": "^4.3.1"
   },
   "devDependencies": {
     "@netlify/plugin-nextjs": "^5.15.12"
+  },
+  "overrides": {
+    "postcss": "^8.5.25",
+    "sharp": "^0.35.3"
   }
 }
