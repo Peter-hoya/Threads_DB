@@ -2,10 +2,18 @@
 import { useState, useEffect } from 'react';
 import Modal from '@/components/Modal';
 
+async function apiRequest(url, options) {
+  const response = await fetch(url, options);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `요청 실패 (${response.status})`);
+  return data;
+}
+
 export default function TemplatesPage() {
   const [templates, setTemplates] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [filterAccount, setFilterAccount] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -17,28 +25,38 @@ export default function TemplatesPage() {
   const [genResults, setGenResults] = useState([]);
   const [selectedResults, setSelectedResults] = useState(new Set());
   const [sending, setSending] = useState(false);
-  const [genPlatform, setGenPlatform] = useState('threads');
   const [genAccountId, setGenAccountId] = useState('');
 
   const fetchData = async () => {
-    const [tRes, aRes] = await Promise.all([
-      fetch(`/api/templates${filterAccount ? `?accountId=${filterAccount}` : ''}`),
-      fetch('/api/accounts'),
-    ]);
-    setTemplates(await tRes.json());
-    setAccounts(await aRes.json());
-    setLoading(false);
+    try {
+      setError('');
+      const [templateData, accountData] = await Promise.all([
+        apiRequest(`/api/templates${filterAccount ? `?accountId=${filterAccount}` : ''}`),
+        apiRequest('/api/accounts'),
+      ]);
+      setTemplates(templateData);
+      setAccounts(accountData);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  useEffect(() => { fetchData(); }, [filterAccount]);
+  useEffect(() => { void fetchData(); }, [filterAccount]);
 
   const handleSubmit = async () => {
-    const url = editingId ? `/api/templates/${editingId}` : '/api/templates';
-    const method = editingId ? 'PATCH' : 'POST';
-    await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
-    setModalOpen(false);
-    setEditingId(null);
-    fetchData();
+    try {
+      setError('');
+      const url = editingId ? `/api/templates/${editingId}` : '/api/templates';
+      const method = editingId ? 'PATCH' : 'POST';
+      await apiRequest(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+      setModalOpen(false);
+      setEditingId(null);
+      await fetchData();
+    } catch (requestError) {
+      setError(requestError.message);
+    }
   };
 
   const handleEdit = (t) => {
@@ -49,8 +67,13 @@ export default function TemplatesPage() {
 
   const handleDelete = async (id) => {
     if (!confirm('이 템플릿을 삭제하시겠습니까?')) return;
-    await fetch(`/api/templates/${id}`, { method: 'DELETE' });
-    fetchData();
+    try {
+      setError('');
+      await apiRequest(`/api/templates/${id}`, { method: 'DELETE' });
+      await fetchData();
+    } catch (requestError) {
+      setError(requestError.message);
+    }
   };
 
   // === AI 콘텐츠 생성 ===
@@ -58,27 +81,23 @@ export default function TemplatesPage() {
     setActiveTemplateId(t.id);
     setGenResults([]);
     setSelectedResults(new Set());
-    setGenPlatform('threads');
     setGenAccountId(String(t.accountId));
     setGenerating(true);
 
     try {
-      const res = await fetch('/api/generate', {
+      const data = await apiRequest('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          promptText: t.promptText,
-          templateCode: t.templateCode,
-          accountName: t.account?.accountName || 'Unknown',
+          templateId: t.id,
+          count: 10,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '생성 실패');
-
       const newResults = data.posts.map((content, idx) => ({
         id: Date.now() + idx,
         content,
       }));
+      setGenAccountId(String(data.accountId));
       setGenResults(newResults);
       setSelectedResults(new Set(newResults.map((r) => r.id)));
     } catch (e) {
@@ -123,26 +142,33 @@ export default function TemplatesPage() {
     setSending(true);
     const activeTemplate = templates.find((t) => t.id === activeTemplateId);
     const selected = genResults.filter((r) => selectedResults.has(r.id));
+    const savedIds = [];
     try {
       for (const item of selected) {
-        await fetch('/api/posts', {
+        await apiRequest('/api/posts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             accountId: parseInt(genAccountId),
-            platform: genPlatform,
+            platform: 'threads',
             content: item.content,
             templateId: activeTemplate?.id || null,
-            status: 'pending',
           }),
         });
+        savedIds.push(item.id);
       }
-      alert(`✅ ${selected.length}개 게시물이 대기열에 추가되었습니다.\n게시물 관리 탭에서 확인하세요.`);
+      alert(`✅ ${selected.length}개 게시물이 초안으로 저장되었습니다.\n게시물 관리에서 권리·정책·광고 고지를 확인한 뒤 각각 승인하세요.`);
       setGenResults((prev) => prev.filter((r) => !selectedResults.has(r.id)));
       setSelectedResults(new Set());
       if (selected.length === genResults.length) closeGenerator();
     } catch (e) {
-      alert(`❌ 전송 실패: ${e.message}`);
+      setGenResults((prev) => prev.filter((item) => !savedIds.includes(item.id)));
+      setSelectedResults((prev) => {
+        const next = new Set(prev);
+        savedIds.forEach((id) => next.delete(id));
+        return next;
+      });
+      alert(`❌ ${savedIds.length}/${selected.length}개 저장 후 중단됨: ${e.message}`);
     }
     setSending(false);
   };
@@ -159,6 +185,8 @@ export default function TemplatesPage() {
           setModalOpen(true);
         }}>+ 템플릿 추가</button>
       </div>
+
+      {error && <div className="notice notice--error">⚠️ {error}</div>}
 
       <div className="filter-bar">
         <select className="form-select" value={filterAccount} onChange={(e) => setFilterAccount(e.target.value)}>
@@ -229,17 +257,9 @@ export default function TemplatesPage() {
                         )}
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <select className="form-select" value={genAccountId} onChange={(e) => setGenAccountId(e.target.value)}
-                          style={{ width: 'auto', minWidth: '130px', fontSize: '13px', padding: '4px 8px' }}>
-                          {accounts.filter((a) => a.isActive).map((a) => (
-                            <option key={a.id} value={a.id}>{a.accountName}</option>
-                          ))}
-                        </select>
-                        <select className="form-select" value={genPlatform} onChange={(e) => setGenPlatform(e.target.value)}
-                          style={{ width: 'auto', minWidth: '120px', fontSize: '13px', padding: '4px 8px' }}>
-                          <option value="threads">Threads</option>
-                          <option value="x">X (Twitter)</option>
-                        </select>
+                        <span className="muted-text">
+                          {accounts.find((account) => String(account.id) === genAccountId)?.accountName || '템플릿 계정'}
+                        </span>
                         <button
                           className="btn btn--primary btn--sm"
                           onClick={sendToPosts}

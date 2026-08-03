@@ -7,28 +7,81 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("NETLIFY_DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("NETLIFY_DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
 }
 
 // ============================================================
 // 계정 테이블 - 럭키걸, 럭키맨 등 브랜드/페르소나 계정 관리
 // ============================================================
 model Account {
-  id          Int      @id @default(autoincrement())
-  accountName String   @unique @map("account_name") // 계정 이름 (럭키걸, 럭키맨 등)
-  description String?  // 계정 설명
-  threadsUserId      String? @map("threads_user_id")      // Threads API 사용자 ID
-  threadsAccessToken  String? @map("threads_access_token") // Threads API 액세스 토큰
-  isActive    Boolean  @default(true) @map("is_active") // 활성 상태
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id                   Int       @id @default(autoincrement())
+  accountName          String    @unique @map("account_name") // 계정 이름 (럭키걸, 럭키맨 등)
+  description          String? // 계정 설명
+  threadsUserId        String?   @unique @map("threads_user_id") // Threads API 사용자 ID
+  threadsUsername      String?   @map("threads_username")
+  threadsAccessToken   String?   @map("threads_access_token") // LEGACY ONLY: 암호화 마이그레이션 후 null
+  role                 String    @default("automation") // primary | automation
+  postingEnabled       Boolean   @default(false) @map("posting_enabled")
+  timezone             String    @default("Asia/Seoul")
+  operatingStartMinute Int       @default(420) @map("operating_start_minute") // 07:00
+  operatingEndMinute   Int       @default(120) @map("operating_end_minute") // 02:00 (익일)
+  dailyPostLimit       Int       @default(6) @map("daily_post_limit")
+  tokenStatus          String    @default("missing") @map("token_status") // missing | active | expiring | expired | invalid
+  tokenType            String?   @map("token_type")
+  tokenScopes          String?   @map("token_scopes") // 검증된 scope만 저장; 미검증이면 null
+  tokenExpiresAt       DateTime? @map("token_expires_at")
+  tokenLastRefreshedAt DateTime? @map("token_last_refreshed_at")
+  tokenLastValidatedAt DateTime? @map("token_last_validated_at")
+  oauthConnectedAt     DateTime? @map("oauth_connected_at")
+  isActive             Boolean   @default(true) @map("is_active") // 활성 상태
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
 
   // Relations
-  templates Template[]
-  posts     Post[]
+  templates   Template[]
+  posts       Post[]
+  credential  AccountCredential?
+  oauthStates OAuthState[]
+  jobs        Job[]
+  auditEvents AuditEvent[]
 
   @@map("accounts")
+}
+
+// Threads 액세스 토큰은 AES-256-GCM으로 암호화해 계정당 하나만 저장한다.
+model AccountCredential {
+  accountId            Int      @id @map("account_id")
+  encryptedAccessToken String   @map("encrypted_access_token")
+  accessTokenIv        String   @map("access_token_iv")
+  accessTokenAuthTag   String   @map("access_token_auth_tag")
+  encryptionVersion    Int      @default(1) @map("encryption_version")
+  tokenFingerprint     String?  @map("token_fingerprint")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@map("account_credentials")
+}
+
+// OAuth state 원문은 저장하지 않고 SHA-256 해시만 저장한다.
+model OAuthState {
+  id          String    @id @default(uuid())
+  stateHash   String    @unique @map("state_hash")
+  accountId   Int?      @map("account_id")
+  redirectUri String    @map("redirect_uri")
+  returnTo    String?   @map("return_to")
+  metadata    Json?
+  expiresAt   DateTime  @map("expires_at")
+  usedAt      DateTime? @map("used_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  account Account? @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt, usedAt])
+  @@map("oauth_states")
 }
 
 // ============================================================
@@ -39,7 +92,7 @@ model Template {
   accountId    Int      @map("account_id")
   templateCode String   @map("template_code") // A, B, C, D 등 알파벳 코드
   templateName String?  @map("template_name") // 템플릿 이름 (선택)
-  promptText   String   @map("prompt_text")   // 실제 프롬프트 내용
+  promptText   String   @map("prompt_text") // 실제 프롬프트 내용
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
@@ -57,37 +110,122 @@ model Template {
 // 게시물 테이블 - 스레드/X 발행 콘텐츠
 // ============================================================
 model Post {
-  id          Int      @id @default(autoincrement())
-  accountId   Int      @map("account_id")     // 어떤 계정인지
-  platform    String   @map("platform")       // 'threads' 또는 'x' (정확한 텍스트)
-  content     String   @map("content")        // 발행할 텍스트 (줄바꿈 포함)
-  templateId  Int?     @map("template_id")    // 사용된 템플릿 (선택)
+  id         Int    @id @default(autoincrement())
+  accountId  Int    @map("account_id") // 어떤 계정인지
+  platform   String @map("platform") // 'threads' 또는 'x' (정확한 텍스트)
+  content    String @map("content") // 발행할 텍스트 (줄바꿈 포함)
+  templateId Int?   @map("template_id") // 사용된 템플릿 (선택)
 
   // 미디어 및 첫 댓글(답글)
-  mediaUrl    String?  @map("media_url")      // 사진 또는 영상 외부 링크
-  mediaType   String?  @map("media_type")     // 'image' 또는 'video'
-  replyContent String? @map("reply_content")  // 본문 바로 아래 달릴 첫 댓글(스레드) 내용
+  mediaUrl     String? @map("media_url") // 사진 또는 영상 외부 링크
+  mediaType    String? @map("media_type") // 'image' 또는 'video'
+  replyContent String? @map("reply_content") // 본문 바로 아래 달릴 첫 댓글(스레드) 내용
 
   // 발행 관련
-  status      String   @default("pending") @map("status") // pending, scheduled, published, failed
-  scheduledAt DateTime? @map("scheduled_at")  // 발행 예정 시간
-  publishedAt DateTime? @map("published_at")  // 실제 발행 시간
+  status                String    @default("draft") @map("status") // draft, queued, publishing, published, failed, cancelled
+  approvalStatus        String    @default("draft") @map("approval_status") // draft, approved, rejected
+  approvedAt            DateTime? @map("approved_at")
+  approvedBy            String?   @map("approved_by")
+  rightsConfirmed       Boolean   @default(false) @map("rights_confirmed")
+  policyReviewConfirmed Boolean   @default(false) @map("policy_review_confirmed")
+  affiliateDisclosure   String?   @map("affiliate_disclosure")
+  sourceUrl             String?   @map("source_url")
+  payloadHash           String?   @map("payload_hash")
+  contentFingerprint    String?   @map("content_fingerprint")
+  idempotencyKey        String?   @unique @map("idempotency_key")
+  scheduledAt           DateTime? @map("scheduled_at") // 발행 예정 시간
+  publishedAt           DateTime? @map("published_at") // 실제 발행 시간
 
   // 발행 결과
-  postIdExternal String? @map("post_id_external") // 외부 플랫폼 게시물 ID (threads/x에서 반환)
-  errorMessage   String? @map("error_message")     // 실패 시 에러 메시지
+  containerId         String?   @map("container_id")
+  containerCreatedAt  DateTime? @map("container_created_at")
+  postIdExternal      String?   @unique @map("post_id_external") // 외부 플랫폼 게시물 ID (Threads에서 반환)
+  replyContainerId    String?   @map("reply_container_id")
+  replyPostIdExternal String?   @unique @map("reply_post_id_external")
+  replyPublishedAt    DateTime? @map("reply_published_at")
+  needsReconciliation Boolean   @default(false) @map("needs_reconciliation")
+  reconciliationNote  String?   @map("reconciliation_note")
+  publishAttempts     Int       @default(0) @map("publish_attempts")
+  lastAttemptAt       DateTime? @map("last_attempt_at")
+  errorMessage        String?   @map("error_message") // 실패 시 에러 메시지
 
   // 적재 시간 (DB에 저장된 시간)
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
   account  Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   template Template? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  jobs     Job[]
 
   // 인덱스: cron 발행 시 pending 게시물을 적재 순서(id)로 빠르게 조회
   @@index([status, id])
   @@index([platform, status])
   @@index([accountId, platform])
+  @@index([approvalStatus, status, scheduledAt])
+  @@index([payloadHash])
+  @@index([contentFingerprint])
   @@map("posts")
+}
+
+// VPS worker가 원자적으로 lease해 처리하는 durable job queue.
+model Job {
+  id          Int       @id @default(autoincrement())
+  type        String // publish_post | publish_reply
+  status      String    @default("queued") // queued | running | succeeded | failed | cancelled | dead
+  postId      Int?      @map("post_id")
+  accountId   Int?      @map("account_id")
+  runAt       DateTime  @default(now()) @map("run_at")
+  dedupeKey   String    @unique @map("dedupe_key")
+  payload     Json?
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(5) @map("max_attempts")
+  lockedAt    DateTime? @map("locked_at")
+  lockedBy    String?   @map("locked_by")
+  lastError   String?   @map("last_error")
+  result      Json?
+  finishedAt  DateTime? @map("finished_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  post    Post?    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  account Account? @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([status, runAt])
+  @@index([accountId, status, runAt])
+  @@index([postId, type])
+  @@map("jobs")
+}
+
+model AuditEvent {
+  id         Int      @id @default(autoincrement())
+  accountId  Int?     @map("account_id")
+  actorType  String   @default("admin") @map("actor_type")
+  actorId    String?  @map("actor_id")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  metadata   Json?
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  account Account? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@index([accountId, createdAt])
+  @@index([entityType, entityId])
+  @@index([action, createdAt])
+  @@map("audit_events")
+}
+
+model WorkerHeartbeat {
+  workerId   String   @id @map("worker_id")
+  version    String?
+  metadata   Json?
+  startedAt  DateTime @default(now()) @map("started_at")
+  lastSeenAt DateTime @default(now()) @map("last_seen_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([lastSeenAt])
+  @@map("worker_heartbeats")
 }

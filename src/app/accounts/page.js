@@ -1,59 +1,204 @@
 'use client';
-import { useState, useEffect } from 'react';
+
+import { useCallback, useEffect, useState } from 'react';
 import Modal from '@/components/Modal';
+
+const EMPTY_FORM = {
+  accountName: '',
+  description: '',
+  role: 'automation',
+  postingEnabled: false,
+  dailyPostLimit: 5,
+  operatingStartMinute: 420,
+  operatingEndMinute: 120,
+  timezone: 'Asia/Seoul',
+};
+
+async function apiRequest(url, options) {
+  const response = await fetch(url, options);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `요청 실패 (${response.status})`);
+  return data;
+}
+
+function minuteToTime(value) {
+  const minutes = Number(value) || 0;
+  return `${String(Math.floor(minutes / 60) % 24).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+}
+
+function timeToMinute(value) {
+  const [hour, minute] = String(value).split(':').map(Number);
+  return hour * 60 + minute;
+}
 
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState({ accountName: '', description: '', threadsUserId: '', threadsAccessToken: '' });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [tokenAccount, setTokenAccount] = useState(null);
+  const [tokenValue, setTokenValue] = useState('');
+  const [tokenSaving, setTokenSaving] = useState(false);
+  const [tokenError, setTokenError] = useState('');
 
-  const fetchAccounts = () => {
-    fetch('/api/accounts').then((r) => r.json()).then(setAccounts).finally(() => setLoading(false));
-  };
-
-  useEffect(() => { fetchAccounts(); }, []);
-
-  const handleSubmit = async () => {
-    const url = editingId ? `/api/accounts/${editingId}` : '/api/accounts';
-    const method = editingId ? 'PATCH' : 'POST';
-    const payload = { ...form };
-    if (editingId && !payload.threadsAccessToken) {
-      delete payload.threadsAccessToken;
+  const fetchAccounts = useCallback(async () => {
+    try {
+      setError('');
+      const data = await apiRequest('/api/accounts');
+      setAccounts(Array.isArray(data) ? data : []);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoading(false);
     }
-    await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    setModalOpen(false);
-    setEditingId(null);
-    setForm({ accountName: '', description: '', threadsUserId: '', threadsAccessToken: '' });
-    fetchAccounts();
-  };
+  }, []);
 
-  const handleEdit = (a) => {
-    setEditingId(a.id);
-    setForm({
-      accountName: a.accountName,
-      description: a.description || '',
-      threadsUserId: a.threadsUserId || '',
-      // 수정 시 마스킹된 토큰 값은 넣지 않음 — 빈칸이면 기존 값 유지
-      threadsAccessToken: '',
-    });
+  useEffect(() => { void fetchAccounts(); }, [fetchAccounts]);
+
+  const openNew = () => {
+    setEditingId(null);
+    setForm(EMPTY_FORM);
+    setError('');
     setModalOpen(true);
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm('정말 삭제하시겠습니까? 관련된 모든 템플릿과 게시물도 삭제됩니다.')) return;
-    await fetch(`/api/accounts/${id}`, { method: 'DELETE' });
-    fetchAccounts();
+  const openTokenModal = (account) => {
+    setTokenAccount(account);
+    setTokenValue('');
+    setTokenError('');
+    setSuccess('');
   };
 
-  const handleToggle = async (a) => {
-    await fetch(`/api/accounts/${a.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isActive: !a.isActive }),
+  const closeTokenModal = () => {
+    if (tokenSaving) return;
+    setTokenAccount(null);
+    setTokenValue('');
+    setTokenError('');
+  };
+
+  const openEdit = (account) => {
+    setEditingId(account.id);
+    setForm({
+      accountName: account.accountName,
+      description: account.description || '',
+      role: account.role || 'automation',
+      postingEnabled: account.role === 'primary' ? false : Boolean(account.postingEnabled),
+      dailyPostLimit: account.dailyPostLimit || 5,
+      operatingStartMinute: account.operatingStartMinute ?? 420,
+      operatingEndMinute: account.operatingEndMinute ?? 120,
+      timezone: account.timezone || 'Asia/Seoul',
     });
-    fetchAccounts();
+    setError('');
+    setModalOpen(true);
+  };
+
+  const handleSubmit = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      const payload = {
+        ...form,
+        postingEnabled: form.role === 'primary' ? false : form.postingEnabled,
+        dailyPostLimit: Number(form.dailyPostLimit),
+        operatingStartMinute: Number(form.operatingStartMinute),
+        operatingEndMinute: Number(form.operatingEndMinute),
+      };
+      await apiRequest(editingId ? `/api/accounts/${editingId}` : '/api/accounts', {
+        method: editingId ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      setModalOpen(false);
+      setEditingId(null);
+      setForm(EMPTY_FORM);
+      await fetchAccounts();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggle = async (account) => {
+    try {
+      await apiRequest(`/api/accounts/${account.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: !account.isActive }),
+      });
+      await fetchAccounts();
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  };
+
+  const handleTokenConnect = async () => {
+    const accessToken = tokenValue.trim();
+    if (!tokenAccount || !accessToken) return;
+
+    setTokenSaving(true);
+    setTokenError('');
+    setSuccess('');
+    try {
+      await apiRequest(`/api/accounts/${tokenAccount.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          threadsAccessToken: accessToken,
+          postingEnabled: false,
+        }),
+      });
+      const accountName = tokenAccount.accountName;
+      setTokenAccount(null);
+      setTokenValue('');
+      await fetchAccounts();
+      setSuccess(`${accountName} 사용자 토큰을 확인하고 암호화해 저장했습니다. 발행 테스트 전 “발행 허용”을 켜주세요.`);
+    } catch (requestError) {
+      setTokenError(requestError.message);
+    } finally {
+      setTokenSaving(false);
+    }
+  };
+
+  const handlePostingToggle = async (account) => {
+    try {
+      await apiRequest(`/api/accounts/${account.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postingEnabled: !account.postingEnabled }),
+      });
+      await fetchAccounts();
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  };
+
+  const handleDisconnect = async (account) => {
+    if (!window.confirm(`${account.accountName}의 저장된 Threads 토큰을 제거하고 자동 발행을 정지할까요?`)) return;
+    try {
+      await apiRequest(`/api/accounts/${account.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ threadsAccessToken: null, postingEnabled: false }),
+      });
+      await fetchAccounts();
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('API·초안·템플릿·작업 이력이 전혀 없는 빈 계정만 삭제됩니다. 계속할까요?')) return;
+    try {
+      await apiRequest(`/api/accounts/${id}`, { method: 'DELETE' });
+      await fetchAccounts();
+    } catch (requestError) {
+      setError(requestError.message);
+    }
   };
 
   if (loading) return <div className="loading-page"><div className="spinner" /></div>;
@@ -61,54 +206,87 @@ export default function AccountsPage() {
   return (
     <>
       <div className="page-header">
-        <div><h2>계정 관리</h2><p>브랜드/페르소나 계정 및 Threads API 연동을 관리합니다</p></div>
-        <button className="btn btn--primary" onClick={() => { setEditingId(null); setForm({ accountName: '', description: '', threadsUserId: '', threadsAccessToken: '' }); setModalOpen(true); }}>
-          + 계정 추가
-        </button>
+        <div>
+          <h2>계정 관리</h2>
+          <p>본계정은 수동 전용, 자동화 계정은 공식 OAuth 또는 검증된 사용자 토큰으로 각각 연결합니다.</p>
+        </div>
+        <button className="btn btn--primary" onClick={openNew}>+ 계정 추가</button>
+      </div>
+
+      {error && <div className="notice notice--error">⚠️ {error}</div>}
+      {success && <div className="notice notice--success">✅ {success}</div>}
+
+      <div className="notice notice--info" style={{ marginBottom: '20px' }}>
+        앱 액세스 토큰이 아닌 계정별 Threads 사용자 액세스 토큰만 연결합니다. 서버가 계정 소유자를 확인한 뒤 암호화하며 토큰 원문은 다시 표시하지 않습니다.
       </div>
 
       <div className="card-grid">
-        {accounts.map((a) => (
-          <div className="account-card" key={a.id} style={{ opacity: a.isActive ? 1 : 0.5 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div>
-                <div className="account-card__name">
-                  {a.accountName}
-                  {!a.isActive && <span className="badge badge--failed" style={{ marginLeft: '8px' }}>비활성</span>}
+        {accounts.map((account) => {
+          const isPrimary = account.role === 'primary';
+          const connected = Boolean(account._hasToken);
+          return (
+            <article className="account-card" key={account.id} style={{ opacity: account.isActive ? 1 : 0.62 }}>
+              <div className="account-card__top">
+                <div>
+                  <div className="account-card__name">
+                    {account.accountName}
+                    <span className={`badge ${isPrimary ? 'badge--info' : 'badge--threads'}`} style={{ marginLeft: '8px' }}>
+                      {isPrimary ? '수동 본계정' : '승인형 자동화'}
+                    </span>
+                  </div>
+                  <div className="account-card__desc">{account.description || '설명 없음'}</div>
                 </div>
-                <div className="account-card__desc">{a.description || '설명 없음'}</div>
+                {!account.isActive && <span className="badge badge--failed">비활성</span>}
               </div>
-              <div style={{ display: 'flex', gap: '4px' }}>
-                <button className="btn btn--secondary btn--sm" onClick={() => handleToggle(a)}>
-                  {a.isActive ? '비활성화' : '활성화'}
-                </button>
-                <button className="btn btn--secondary btn--sm" onClick={() => handleEdit(a)}>수정</button>
-                <button className="btn btn--danger btn--sm" onClick={() => handleDelete(a.id)}>삭제</button>
-              </div>
-            </div>
 
-            {/* Threads API 연동 상태 */}
-            <div style={{ margin: '12px 0 4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{
-                display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%',
-                background: a._hasToken ? 'var(--success)' : 'var(--warning)',
-              }} />
-              <span style={{ fontSize: '13px', color: a._hasToken ? 'var(--success)' : 'var(--warning)', fontWeight: 500 }}>
-                {a._hasToken ? 'Threads API 연동됨' : '우회 모드 (실제 발행 안됨)'}
-              </span>
-              {a.threadsUserId && (
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  ID: {a.threadsUserId}
-                </span>
+              <div className="connection-row">
+                <span className={`connection-dot ${connected ? 'is-connected' : ''}`} />
+                <strong>{connected ? 'Threads API 연결됨' : 'Threads API 연결 필요'}</strong>
+                {account.threadsUserId && <span className="muted-text">ID {account.threadsUserId}</span>}
+              </div>
+
+              {account.tokenExpiresAt && (
+                <p className="muted-text">토큰 만료: {new Date(account.tokenExpiresAt).toLocaleString('ko-KR')}</p>
               )}
-            </div>
 
-            <div className="account-card__stats">
-              <div className="account-card__stat">게시물 <strong>{a._count.posts}</strong></div>
-              <div className="account-card__stat">템플릿 <strong>{a._count.templates}</strong></div>
-            </div>
-          </div>
-        ))}
+              <div className="account-card__stats">
+                <div className="account-card__stat">게시물 <strong>{account._count?.posts || 0}</strong></div>
+                <div className="account-card__stat">템플릿 <strong>{account._count?.templates || 0}</strong></div>
+                {!isPrimary && (
+                  <div className="account-card__stat">
+                    자동 발행 <strong>{account.postingEnabled ? '허용' : '정지'}</strong>
+                  </div>
+                )}
+              </div>
+
+              <div className="account-card__actions">
+                <a className="btn btn--success btn--sm" href={`/api/oauth/start?accountId=${account.id}`}>
+                  {connected ? 'OAuth 다시 연결' : 'OAuth 연결'}
+                </a>
+                {!isPrimary && (
+                  <button className="btn btn--secondary btn--sm" onClick={() => openTokenModal(account)}>
+                    {connected ? '사용자 토큰 교체' : '사용자 토큰 연결'}
+                  </button>
+                )}
+                {connected && (
+                  <button className="btn btn--danger btn--sm" onClick={() => handleDisconnect(account)}>
+                    API 연결 해제
+                  </button>
+                )}
+                {!isPrimary && (
+                  <button className="btn btn--secondary btn--sm" onClick={() => handlePostingToggle(account)} disabled={!connected && !account.postingEnabled}>
+                    {account.postingEnabled ? '발행 정지' : '발행 허용'}
+                  </button>
+                )}
+                <button className="btn btn--secondary btn--sm" onClick={() => handleToggle(account)}>
+                  {account.isActive ? '비활성화' : '활성화'}
+                </button>
+                <button className="btn btn--secondary btn--sm" onClick={() => openEdit(account)}>수정</button>
+                <button className="btn btn--danger btn--sm" onClick={() => handleDelete(account.id)}>삭제</button>
+              </div>
+            </article>
+          );
+        })}
         {accounts.length === 0 && (
           <div className="empty-state"><div className="icon">👤</div><p>등록된 계정이 없습니다.</p></div>
         )}
@@ -117,49 +295,104 @@ export default function AccountsPage() {
       <Modal
         open={modalOpen}
         title={editingId ? '계정 수정' : '계정 추가'}
-        onClose={() => { setModalOpen(false); setEditingId(null); }}
-        footer={
+        onClose={() => setModalOpen(false)}
+        footer={(
           <>
             <button className="btn btn--secondary" onClick={() => setModalOpen(false)}>취소</button>
-            <button className="btn btn--primary" onClick={handleSubmit} disabled={!form.accountName.trim()}>
-              {editingId ? '수정' : '추가'}
+            <button className="btn btn--primary" onClick={handleSubmit} disabled={!form.accountName.trim() || saving}>
+              {saving ? '저장 중...' : '저장'}
             </button>
           </>
-        }
+        )}
       >
         <div className="form-group">
           <label className="form-label">계정 이름 *</label>
-          <input className="form-input" placeholder="예: 럭키걸" value={form.accountName}
-            onChange={(e) => setForm({ ...form, accountName: e.target.value })} />
+          <input className="form-input" value={form.accountName} onChange={(event) => setForm({ ...form, accountName: event.target.value })} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">운영 구분 *</label>
+          <select className="form-select" value={form.role} onChange={(event) => {
+            const role = event.target.value;
+            setForm({ ...form, role, postingEnabled: role === 'primary' ? false : form.postingEnabled });
+          }}>
+            <option value="primary">본계정 — 수동 전용</option>
+            <option value="automation">부계정 — 승인 후 자동 발행</option>
+          </select>
         </div>
         <div className="form-group">
           <label className="form-label">설명</label>
-          <input className="form-input" placeholder="계정 설명 (선택)" value={form.description}
-            onChange={(e) => setForm({ ...form, description: e.target.value })} />
+          <input className="form-input" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
         </div>
 
-        <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '20px 0 16px' }} />
-        <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px', lineHeight: 1.5 }}>
-          🔗 <strong>Threads API 연동</strong> — 메타 API를 연동하려면 아래 정보를 입력하세요.<br />
-          <span style={{ color: 'var(--warning)', display: 'inline-block', marginTop: '4px' }}>⚠️ 비워둘 경우 실제 발행 없이 <strong>가짜(Mock) 성공 처리로 우회(Bypass)</strong>됩니다. (UI/기능 테스트용)</span>
+        {form.role === 'automation' && (
+          <>
+            <div className="form-grid">
+              <div className="form-group">
+                <label className="form-label">하루 내부 한도</label>
+                <input className="form-input" type="number" min="1" max="50" value={form.dailyPostLimit} onChange={(event) => setForm({ ...form, dailyPostLimit: event.target.value })} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">시간대</label>
+                <input className="form-input" value={form.timezone} readOnly />
+              </div>
+            </div>
+            <div className="form-grid">
+              <div className="form-group">
+                <label className="form-label">운영 시작 시각</label>
+                <input className="form-input" type="time" value={minuteToTime(form.operatingStartMinute)} onChange={(event) => setForm({ ...form, operatingStartMinute: timeToMinute(event.target.value) })} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">운영 종료 시각</label>
+                <input className="form-input" type="time" value={minuteToTime(form.operatingEndMinute)} onChange={(event) => setForm({ ...form, operatingEndMinute: timeToMinute(event.target.value) })} />
+              </div>
+            </div>
+            <label className="checkbox-row">
+              <input type="checkbox" checked={form.postingEnabled} onChange={(event) => setForm({ ...form, postingEnabled: event.target.checked })} />
+              승인된 게시물 자동 발행 허용
+            </label>
+          </>
+        )}
+
+        <hr className="form-divider" />
+        <p className="muted-text">
+          계정을 저장한 뒤 카드의 OAuth 연결 버튼을 사용하세요. Threads ID와 사용자명은 토큰 소유자 확인 후 서버가 자동으로 기록합니다.
         </p>
+      </Modal>
 
-        <div className="form-group">
-          <label className="form-label">Threads User ID</label>
-          <input className="form-input" placeholder="선택 입력 (토큰으로 자동 확인)" value={form.threadsUserId}
-            onChange={(e) => setForm({ ...form, threadsUserId: e.target.value })} />
-          <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-            실제 발행 계정은 액세스 토큰을 기준으로 자동 확인됩니다.
-          </span>
+      <Modal
+        open={Boolean(tokenAccount)}
+        title="Threads 사용자 토큰 연결"
+        onClose={closeTokenModal}
+        footer={(
+          <>
+            <button className="btn btn--secondary" onClick={closeTokenModal} disabled={tokenSaving}>취소</button>
+            <button className="btn btn--primary" onClick={handleTokenConnect} disabled={!tokenValue.trim() || tokenSaving}>
+              {tokenSaving ? '계정 확인 중...' : '확인 후 암호화 저장'}
+            </button>
+          </>
+        )}
+      >
+        <div className="notice notice--info" style={{ marginBottom: '16px' }}>
+          <strong>{tokenAccount?.accountName}</strong> 계정에서 발급한 사용자 액세스 토큰을 입력하세요. <code>TH|</code>로 시작하는 앱 액세스 토큰은 게시에 사용할 수 없습니다.
         </div>
+        {tokenError && <div className="notice notice--error" style={{ marginBottom: '16px' }}>⚠️ {tokenError}</div>}
         <div className="form-group">
-          <label className="form-label">Threads Access Token</label>
-          <input className="form-input" type="password" placeholder={editingId ? '변경하려면 새 토큰 입력 (비우면 기존 유지)' : 'Meta 개발자 포털에서 발급받은 토큰'} value={form.threadsAccessToken}
-            onChange={(e) => setForm({ ...form, threadsAccessToken: e.target.value })} />
-          <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-            토큰은 암호화되어 저장되며, 화면에 노출되지 않습니다.
-          </span>
+          <label className="form-label" htmlFor="threads-user-access-token">Threads 사용자 액세스 토큰</label>
+          <input
+            id="threads-user-access-token"
+            className="form-input"
+            type="password"
+            autoComplete="new-password"
+            autoCapitalize="none"
+            spellCheck={false}
+            value={tokenValue}
+            onChange={(event) => setTokenValue(event.target.value)}
+            placeholder="사용자 액세스 토큰 붙여넣기"
+          />
         </div>
+        <p className="muted-text">
+          저장 시 Meta <code>/me</code>로 사용자 ID와 사용자명을 확인합니다. 토큰은 암호화되어 저장되고 이 화면에서 다시 조회할 수 없습니다.
+        </p>
       </Modal>
     </>
   );
