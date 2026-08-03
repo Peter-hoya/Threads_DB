@@ -86,6 +86,21 @@ test('이미지와 동영상 크기 상한을 각각 적용한다', () => {
   );
 });
 
+test('스토리지 플랜에 맞춘 동영상 상한을 적용할 수 있다', () => {
+  const freePlanLimit = 50 * 1024 * 1024;
+  assert.doesNotThrow(() => assertUploadDeclaration(
+    { filename: 'movie.mp4', contentType: 'video/mp4', size: freePlanLimit },
+    { maxVideoBytes: freePlanLimit },
+  ));
+  assert.throws(
+    () => assertUploadDeclaration(
+      { filename: 'movie.mp4', contentType: 'video/mp4', size: freePlanLimit + 1 },
+      { maxVideoBytes: freePlanLimit },
+    ),
+    /50MB/,
+  );
+});
+
 test('허용되지 않은 MIME과 빈 파일을 거부한다', () => {
   assert.throws(
     () => assertUploadDeclaration({ filename: 'image.webp', contentType: 'image/webp', size: 100 }),
