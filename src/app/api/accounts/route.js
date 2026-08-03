@@ -77,7 +77,12 @@ export async function POST(request) {
           postingEnabled: parsed.data.role === 'primary' ? false : (parsed.data.postingEnabled ?? false),
           ...(parsed.accessToken ? {
             tokenStatus: 'active',
+            tokenType: 'manual_bearer',
+            tokenScopes: null,
+            tokenExpiresAt: null,
+            tokenLastRefreshedAt: null,
             tokenLastValidatedAt: new Date(),
+            oauthConnectedAt: null,
           } : {}),
         },
         select: { id: true },

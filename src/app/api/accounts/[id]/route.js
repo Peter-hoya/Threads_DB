@@ -90,7 +90,12 @@ export async function PATCH(request, { params }) {
       if (parsed.accessToken) {
         Object.assign(accountData, {
           tokenStatus: 'active',
+          tokenType: 'manual_bearer',
+          tokenScopes: null,
+          tokenExpiresAt: null,
+          tokenLastRefreshedAt: null,
           tokenLastValidatedAt: new Date(),
+          oauthConnectedAt: null,
         });
       } else if (parsed.accessToken === null) {
         accountData.postingEnabled = false;

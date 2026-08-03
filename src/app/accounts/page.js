@@ -38,7 +38,12 @@ export default function AccountsPage() {
   const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [form, setForm] = useState(EMPTY_FORM);
+  const [tokenAccount, setTokenAccount] = useState(null);
+  const [tokenValue, setTokenValue] = useState('');
+  const [tokenSaving, setTokenSaving] = useState(false);
+  const [tokenError, setTokenError] = useState('');
 
   const fetchAccounts = useCallback(async () => {
     try {
@@ -59,6 +64,20 @@ export default function AccountsPage() {
     setForm(EMPTY_FORM);
     setError('');
     setModalOpen(true);
+  };
+
+  const openTokenModal = (account) => {
+    setTokenAccount(account);
+    setTokenValue('');
+    setTokenError('');
+    setSuccess('');
+  };
+
+  const closeTokenModal = () => {
+    if (tokenSaving) return;
+    setTokenAccount(null);
+    setTokenValue('');
+    setTokenError('');
   };
 
   const openEdit = (account) => {
@@ -117,6 +136,34 @@ export default function AccountsPage() {
     }
   };
 
+  const handleTokenConnect = async () => {
+    const accessToken = tokenValue.trim();
+    if (!tokenAccount || !accessToken) return;
+
+    setTokenSaving(true);
+    setTokenError('');
+    setSuccess('');
+    try {
+      await apiRequest(`/api/accounts/${tokenAccount.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          threadsAccessToken: accessToken,
+          postingEnabled: false,
+        }),
+      });
+      const accountName = tokenAccount.accountName;
+      setTokenAccount(null);
+      setTokenValue('');
+      await fetchAccounts();
+      setSuccess(`${accountName} 사용자 토큰을 확인하고 암호화해 저장했습니다. 발행 테스트 전 “발행 허용”을 켜주세요.`);
+    } catch (requestError) {
+      setTokenError(requestError.message);
+    } finally {
+      setTokenSaving(false);
+    }
+  };
+
   const handlePostingToggle = async (account) => {
     try {
       await apiRequest(`/api/accounts/${account.id}`, {
@@ -161,15 +208,16 @@ export default function AccountsPage() {
       <div className="page-header">
         <div>
           <h2>계정 관리</h2>
-          <p>본계정은 수동 전용, 자동화 계정은 공식 Threads OAuth로 각각 연결합니다.</p>
+          <p>본계정은 수동 전용, 자동화 계정은 공식 OAuth 또는 검증된 사용자 토큰으로 각각 연결합니다.</p>
         </div>
         <button className="btn btn--primary" onClick={openNew}>+ 계정 추가</button>
       </div>
 
       {error && <div className="notice notice--error">⚠️ {error}</div>}
+      {success && <div className="notice notice--success">✅ {success}</div>}
 
       <div className="notice notice--info" style={{ marginBottom: '20px' }}>
-        토큰이 없는 계정은 발행되지 않습니다. 가짜 성공 처리나 다른 계정의 공용 토큰 대체는 사용하지 않습니다.
+        앱 액세스 토큰이 아닌 계정별 Threads 사용자 액세스 토큰만 연결합니다. 서버가 계정 소유자를 확인한 뒤 암호화하며 토큰 원문은 다시 표시하지 않습니다.
       </div>
 
       <div className="card-grid">
@@ -215,6 +263,11 @@ export default function AccountsPage() {
                 <a className="btn btn--success btn--sm" href={`/api/oauth/start?accountId=${account.id}`}>
                   {connected ? 'OAuth 다시 연결' : 'OAuth 연결'}
                 </a>
+                {!isPrimary && (
+                  <button className="btn btn--secondary btn--sm" onClick={() => openTokenModal(account)}>
+                    {connected ? '사용자 토큰 교체' : '사용자 토큰 연결'}
+                  </button>
+                )}
                 {connected && (
                   <button className="btn btn--danger btn--sm" onClick={() => handleDisconnect(account)}>
                     API 연결 해제
@@ -303,6 +356,42 @@ export default function AccountsPage() {
         <hr className="form-divider" />
         <p className="muted-text">
           계정을 저장한 뒤 카드의 OAuth 연결 버튼을 사용하세요. Threads ID와 사용자명은 토큰 소유자 확인 후 서버가 자동으로 기록합니다.
+        </p>
+      </Modal>
+
+      <Modal
+        open={Boolean(tokenAccount)}
+        title="Threads 사용자 토큰 연결"
+        onClose={closeTokenModal}
+        footer={(
+          <>
+            <button className="btn btn--secondary" onClick={closeTokenModal} disabled={tokenSaving}>취소</button>
+            <button className="btn btn--primary" onClick={handleTokenConnect} disabled={!tokenValue.trim() || tokenSaving}>
+              {tokenSaving ? '계정 확인 중...' : '확인 후 암호화 저장'}
+            </button>
+          </>
+        )}
+      >
+        <div className="notice notice--info" style={{ marginBottom: '16px' }}>
+          <strong>{tokenAccount?.accountName}</strong> 계정에서 발급한 사용자 액세스 토큰을 입력하세요. <code>TH|</code>로 시작하는 앱 액세스 토큰은 게시에 사용할 수 없습니다.
+        </div>
+        {tokenError && <div className="notice notice--error" style={{ marginBottom: '16px' }}>⚠️ {tokenError}</div>}
+        <div className="form-group">
+          <label className="form-label" htmlFor="threads-user-access-token">Threads 사용자 액세스 토큰</label>
+          <input
+            id="threads-user-access-token"
+            className="form-input"
+            type="password"
+            autoComplete="new-password"
+            autoCapitalize="none"
+            spellCheck={false}
+            value={tokenValue}
+            onChange={(event) => setTokenValue(event.target.value)}
+            placeholder="사용자 액세스 토큰 붙여넣기"
+          />
+        </div>
+        <p className="muted-text">
+          저장 시 Meta <code>/me</code>로 사용자 ID와 사용자명을 확인합니다. 토큰은 암호화되어 저장되고 이 화면에서 다시 조회할 수 없습니다.
         </p>
       </Modal>
     </>

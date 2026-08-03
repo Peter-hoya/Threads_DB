@@ -507,6 +507,7 @@ input, textarea, select { font-family: inherit; }
 }
 .notice--error { background: var(--error-bg); color: var(--error); border-color: color-mix(in srgb, var(--error) 25%, transparent); }
 .notice--info { background: var(--info-bg); color: var(--info); border-color: color-mix(in srgb, var(--info) 25%, transparent); }
+.notice--success { background: var(--success-bg); color: var(--success); border-color: color-mix(in srgb, var(--success) 25%, transparent); }
 
 /* ===== POST EDITOR ===== */
 .header-actions { display: flex; flex-wrap: wrap; gap: 8px; }
