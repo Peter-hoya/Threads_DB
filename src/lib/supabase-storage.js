@@ -13,10 +13,28 @@ export const SIGNED_UPLOAD_TTL_SECONDS = 2 * 60 * 60;
 export const COMPLETION_TOKEN_TTL_SECONDS = 26 * 60 * 60;
 export const TUS_CHUNK_SIZE = 6 * 1024 * 1024;
 
-const BUCKET_FILE_SIZE_LIMIT = VIDEO_MAX_BYTES;
+const DEFAULT_BUCKET_FILE_SIZE_LIMIT = 50 * 1024 * 1024;
 const BUCKET_CACHE_TTL_MS = 5 * 60 * 1000;
 let bucketsReadyAt = 0;
 let bucketsReadyPromise = null;
+
+function bucketFileSizeLimit(env = process.env) {
+  const raw = env.SUPABASE_BUCKET_FILE_SIZE_LIMIT_BYTES;
+  if (!raw) return DEFAULT_BUCKET_FILE_SIZE_LIMIT;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < IMAGE_MAX_BYTES || value > VIDEO_MAX_BYTES) {
+    throw new SupabaseStorageError(
+      'SUPABASE_BUCKET_FILE_SIZE_LIMIT_BYTES는 8MB~1GB 사이의 바이트 정수여야 합니다.',
+      { status: 503, code: 'INVALID_BUCKET_FILE_SIZE_LIMIT' },
+    );
+  }
+  return value;
+}
+
+function isBucketNotFoundError(error) {
+  return error instanceof SupabaseStorageError
+    && (error.status === 404 || /bucket not found/i.test(String(error.code || error.message)));
+}
 
 export class SupabaseStorageError extends Error {
   constructor(message, { status = 500, code = 'SUPABASE_STORAGE_ERROR', details = null } = {}) {
@@ -166,7 +184,7 @@ function desiredBucketConfig(id) {
     id,
     name: id,
     public: id === PUBLISH_BUCKET,
-    file_size_limit: BUCKET_FILE_SIZE_LIMIT,
+    file_size_limit: bucketFileSizeLimit(),
     allowed_mime_types: [...ALLOWED_MEDIA_TYPES],
   };
 }
@@ -187,7 +205,7 @@ export async function getMediaBucketStatus() {
       const desired = desiredBucketConfig(id);
       statuses.push({ id, exists: true, configured: !bucketNeedsUpdate(bucket, desired), bucket });
     } catch (error) {
-      if (error instanceof SupabaseStorageError && error.status === 404) {
+      if (isBucketNotFoundError(error)) {
         statuses.push({ id, exists: false, configured: false, bucket: null });
       } else {
         throw error;
@@ -210,7 +228,7 @@ async function ensureBucket(id) {
     }
     return { id, action: 'unchanged' };
   } catch (error) {
-    if (!(error instanceof SupabaseStorageError) || error.status !== 404) throw error;
+    if (!isBucketNotFoundError(error)) throw error;
     await storageRequest('/bucket', { method: 'POST', body: desired });
     return { id, action: 'created' };
   }
@@ -335,7 +353,9 @@ export function getPublicMediaUrl(path) {
 }
 
 export async function createStagingUpload(input) {
-  const declaration = assertUploadDeclaration(input);
+  const declaration = assertUploadDeclaration(input, {
+    maxVideoBytes: bucketFileSizeLimit(),
+  });
   await ensureMediaBuckets();
 
   const objectId = randomUUID();
