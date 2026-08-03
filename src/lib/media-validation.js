@@ -52,7 +52,10 @@ export function getExtensionForContentType(contentType) {
   }
 }
 
-export function assertUploadDeclaration({ filename, contentType, size }) {
+export function assertUploadDeclaration(
+  { filename, contentType, size },
+  { maxVideoBytes = VIDEO_MAX_BYTES } = {},
+) {
   const normalizedContentType = normalizeContentType(contentType);
   const mediaType = getMediaType(normalizedContentType);
   const numericSize = Number(size);
@@ -76,9 +79,11 @@ export function assertUploadDeclaration({ filename, contentType, size }) {
     });
   }
 
-  const maxBytes = mediaType === 'image' ? IMAGE_MAX_BYTES : VIDEO_MAX_BYTES;
+  const maxBytes = mediaType === 'image' ? IMAGE_MAX_BYTES : maxVideoBytes;
   if (numericSize > maxBytes) {
-    const maxLabel = mediaType === 'image' ? '8MB' : '1GB';
+    const maxLabel = mediaType === 'image'
+      ? '8MB'
+      : `${Math.floor(maxVideoBytes / MEBIBYTE)}MB`;
     throw new MediaValidationError(`${mediaType === 'image' ? '이미지' : '동영상'}는 ${maxLabel}를 초과할 수 없습니다.`, {
       code: 'FILE_TOO_LARGE',
       status: 413,
