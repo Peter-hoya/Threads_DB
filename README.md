@@ -60,6 +60,7 @@ npm run build
 | 암호화 | `THREADS_TOKEN_ENCRYPTION_KEY` | 웹과 VPS가 공유하는 32-byte AES 키 |
 | Meta | `THREADS_APP_ID`, `THREADS_APP_SECRET`, `THREADS_OAUTH_REDIRECT_URI` | 계정별 공식 OAuth 연결 |
 | Supabase | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | service role은 서버에만 저장 |
+| Supabase | `SUPABASE_BUCKET_FILE_SIZE_LIMIT_BYTES` | 기본 50MB; 유료 플랜에서만 상향 |
 | 내부 API | `UPLOAD_SIGNING_SECRET`, `CRON_SECRET`, `INTERNAL_API_SECRET` | 서로 다른 긴 임의 값 사용 |
 | 콘텐츠 | `CONTENT_REUSE_COOLDOWN_DAYS` | 동일 콘텐츠 재사용 제한, 기본 90일 |
 | 선택 AI | `OPENAI_API_KEY`, `OPENAI_MODEL` | 템플릿 기반 초안 생성; 모델을 명시적으로 고정 |
