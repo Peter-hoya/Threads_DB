@@ -6,14 +6,18 @@ const PUBLIC_SERVER_PATHS = [
   '/api/internal/',
 ];
 
+const PUBLIC_EXACT_PATHS = new Set([
+  '/api/oauth/callback',
+  '/api/oauth/deauthorize',
+  '/api/oauth/data-deletion',
+  '/api/upload/cleanup',
+  '/data-deletion',
+]);
+
 function isPublicServerRequest(request) {
   const { pathname } = request.nextUrl;
-  if (pathname === '/api/oauth/callback' || pathname === '/api/oauth/callback/') {
-    return true;
-  }
-  if (pathname === '/api/upload/cleanup' || pathname === '/api/upload/cleanup/') {
-    return true;
-  }
+  const normalizedPath = pathname.length > 1 ? pathname.replace(/\/$/, '') : pathname;
+  if (PUBLIC_EXACT_PATHS.has(normalizedPath)) return true;
   const explicit = PUBLIC_SERVER_PATHS.some((path) => (
     path.endsWith('/') ? pathname.startsWith(path) : pathname === path
   ));

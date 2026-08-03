@@ -82,6 +82,13 @@ https://YOUR_ADMIN_DOMAIN/api/oauth/callback
 
 배포 후 Basic Auth로 관리자 화면에 접속해 `/api/upload/setup`에 `POST`하면 `threads-staging` 비공개 버킷과 `threads-publish` 공개 버킷을 생성·검증합니다. 브라우저 업로드는 6 MiB 이하는 signed PUT, 그보다 큰 파일은 TUS 6 MiB chunk를 사용합니다.
 
+Meta Threads 앱에는 다음 운영 콜백을 등록합니다. 두 엔드포인트는 `THREADS_APP_SECRET`으로 `signed_request`를 검증하며, 데이터 삭제 요청은 Meta 식별정보와 저장 토큰을 제거한 뒤 확인 코드와 상태 URL을 반환합니다.
+
+```text
+https://YOUR_ADMIN_DOMAIN/api/oauth/deauthorize
+https://YOUR_ADMIN_DOMAIN/api/oauth/data-deletion
+```
+
 ## 계정 API 연결
 
 1. 계정 관리에서 본계정 하나를 `본계정 — 수동 전용`으로 저장합니다.
